@@ -79,7 +79,9 @@ module mqnic_interface_rx #
     parameter AXIS_KEEP_WIDTH = AXIS_DATA_WIDTH/8,
     parameter AXIS_RX_ID_WIDTH = PORTS > 1 ? $clog2(PORTS) : 1,
     parameter AXIS_RX_DEST_WIDTH = RX_QUEUE_INDEX_WIDTH+1,
-    parameter AXIS_RX_USER_WIDTH = (PTP_TS_ENABLE ? PTP_TS_WIDTH : 0) + 1
+    parameter AXIS_RX_USER_WIDTH = (PTP_TS_ENABLE ? PTP_TS_WIDTH : 0) + 1,
+    
+    parameter DMA_CLIENT_LEN_WIDTH = DMA_LEN_WIDTH
 )
 (
     input  wire                                         clk,
@@ -216,7 +218,6 @@ module mqnic_interface_rx #
 );
 
 parameter DMA_CLIENT_TAG_WIDTH = $clog2(RX_DESC_TABLE_SIZE);
-parameter DMA_CLIENT_LEN_WIDTH = DMA_LEN_WIDTH;
 
 parameter REQ_TAG_WIDTH = $clog2(RX_DESC_TABLE_SIZE);
 

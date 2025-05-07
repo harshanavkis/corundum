@@ -66,7 +66,9 @@ module mqnic_interface_tx #
     parameter AXIS_KEEP_WIDTH = AXIS_DATA_WIDTH/8,
     parameter AXIS_TX_ID_WIDTH = TX_QUEUE_INDEX_WIDTH,
     parameter AXIS_TX_DEST_WIDTH = $clog2(PORTS)+4,
-    parameter AXIS_TX_USER_WIDTH = TX_TAG_WIDTH + 1
+    parameter AXIS_TX_USER_WIDTH = TX_TAG_WIDTH + 1,
+
+    parameter DMA_CLIENT_LEN_WIDTH = DMA_LEN_WIDTH
 )
 (
     input  wire                                         clk,
@@ -189,7 +191,6 @@ module mqnic_interface_tx #
 );
 
 parameter DMA_CLIENT_TAG_WIDTH = $clog2(TX_DESC_TABLE_SIZE);
-parameter DMA_CLIENT_LEN_WIDTH = DMA_LEN_WIDTH;
 
 wire [AXIS_DESC_DATA_WIDTH-1:0]  tx_fifo_desc_tdata;
 wire [AXIS_DESC_KEEP_WIDTH-1:0]  tx_fifo_desc_tkeep;
