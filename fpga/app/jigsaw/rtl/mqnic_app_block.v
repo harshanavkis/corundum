@@ -720,24 +720,28 @@ assign m_axis_direct_rx_tuser = s_axis_direct_rx_tuser;
 /*
  * Ethernet (synchronous MAC interface - low latency raw traffic)
  */
-assign m_axis_sync_tx_tdata = s_axis_sync_tx_tdata;
-assign m_axis_sync_tx_tkeep = s_axis_sync_tx_tkeep;
-assign m_axis_sync_tx_tvalid = s_axis_sync_tx_tvalid;
-assign s_axis_sync_tx_tready = m_axis_sync_tx_tready;
-assign m_axis_sync_tx_tlast = s_axis_sync_tx_tlast;
-assign m_axis_sync_tx_tuser = s_axis_sync_tx_tuser;
+// App box wires
+assign m_axis_sync_tx_tdata = ~s_axis_sync_rx_tdata;
+assign m_axis_sync_tx_tkeep = s_axis_sync_rx_tkeep;
+assign m_axis_sync_tx_tvalid = s_axis_sync_rx_tvalid;
+assign s_axis_sync_rx_tready = m_axis_sync_tx_tready;
+assign m_axis_sync_tx_tlast = s_axis_sync_rx_tlast;
+assign m_axis_sync_tx_tuser = s_axis_sync_rx_tuser;
 
 assign m_axis_sync_tx_cpl_ts = s_axis_sync_tx_cpl_ts;
 assign m_axis_sync_tx_cpl_tag = s_axis_sync_tx_cpl_tag;
 assign m_axis_sync_tx_cpl_valid = s_axis_sync_tx_cpl_valid;
 assign s_axis_sync_tx_cpl_ready = m_axis_sync_tx_cpl_ready;
 
-assign m_axis_sync_rx_tdata = s_axis_sync_rx_tdata;
-assign m_axis_sync_rx_tkeep = s_axis_sync_rx_tkeep;
-assign m_axis_sync_rx_tvalid = s_axis_sync_rx_tvalid;
-assign s_axis_sync_rx_tready = m_axis_sync_rx_tready;
-assign m_axis_sync_rx_tlast = s_axis_sync_rx_tlast;
-assign m_axis_sync_rx_tuser = s_axis_sync_rx_tuser;
+// Host facing wires: tied-off
+assign m_axis_sync_rx_tdata = s_axis_sync_tx_tdata;
+assign m_axis_sync_rx_tkeep = s_axis_sync_tx_tkeep;
+assign m_axis_sync_rx_tvalid = s_axis_sync_tx_tvalid;
+assign s_axis_sync_tx_tready = m_axis_sync_rx_tready;
+assign m_axis_sync_rx_tlast = s_axis_sync_tx_tlast;
+assign m_axis_sync_rx_tuser = s_axis_sync_tx_tuser;
+
+
 
 /*
  * Ethernet (internal at interface module)
