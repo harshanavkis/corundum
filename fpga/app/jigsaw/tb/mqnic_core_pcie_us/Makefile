@@ -53,6 +53,7 @@ VERILOG_SOURCES += ../../rtl/common/stats_dma_if_pcie.v
 VERILOG_SOURCES += ../../rtl/common/stats_dma_latency.v
 VERILOG_SOURCES += ../../rtl/common/mqnic_tx_scheduler_block_rr.v
 VERILOG_SOURCES += ../../rtl/common/tx_scheduler_rr.v
+VERILOG_SOURCES += ../../rtl/jigsaw_modules/jigsaw_pkt_processor.v
 VERILOG_SOURCES += ../../rtl/mqnic_app_block.v
 VERILOG_SOURCES += ../../lib/eth/rtl/mac_ctrl_rx.v
 VERILOG_SOURCES += ../../lib/eth/rtl/mac_ctrl_tx.v

@@ -24,6 +24,9 @@ from cocotbext.eth import EthMac
 from cocotbext.pcie.core import RootComplex
 from cocotbext.pcie.xilinx.us import UltraScalePlusPcieDevice
 
+from bitarray import bitarray
+import random
+
 try:
     import mqnic
 except ImportError:
@@ -426,6 +429,31 @@ class TB(object):
                     if not mac.tx.empty():
                         await mac.rx.send(await mac.tx.recv())
 
+def jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width):
+    id_bits = bitarray([random.choice([0, 1]) for _ in range(jigsaw_id_width)])
+    op_bits = bitarray([random.choice([0, 1]) for _ in range(jigsaw_op_width)])
+    addr_bits = bitarray([random.choice([0, 1]) for _ in range(jigsaw_addr_width)])
+    # len_bits = bitarray([random.choice([0, 1]) for _ in range(jigsaw_len_width)])
+    len_bits = bitarray(bin(int(jigsaw_data_width/8))[2:].zfill(jigsaw_len_width))
+    data_bits = bitarray([random.choice([0, 1]) for _ in range(jigsaw_data_width)])
+
+    payload_bits = bitarray()
+    payload_bits.extend(id_bits)
+    payload_bits.extend(op_bits)
+    payload_bits.extend(addr_bits)
+    payload_bits.extend(len_bits)
+    payload_bits.extend(data_bits)
+
+    rev_payload_header_bits = bitarray()
+    rev_payload_header_bits.extend(len_bits)
+    rev_payload_header_bits.extend(addr_bits)
+    rev_payload_header_bits.extend(op_bits)
+    rev_payload_header_bits.extend(id_bits)
+
+    rev_payload_data_bits = bitarray()
+    rev_payload_data_bits.extend(data_bits)
+
+    return (payload_bits, rev_payload_header_bits, rev_payload_data_bits)
 
 @cocotb.test()
 async def run_test_nic(dut):
@@ -441,16 +469,45 @@ async def run_test_nic(dut):
 
     tb.log.info("Init complete")
 
-    tb.log.info("Frame echo test")
+    tb.log.info("Jigsaw random pkt test: 512 bit packet")
 
-    payload = bytes([x % 256 for x in range(256)])
-    inverted_payload = bytes([~x & 0xFF for x in payload])
+    jigsaw_id_width = 4
+    jigsaw_op_width = 4
+    jigsaw_addr_width = 64
+    jigsaw_len_width = 16
+    jigsaw_data_width = 424
+    
+    payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
+
+    payload = bytearray(payload_bits.tobytes())
+    rev_payload_header = bytearray(rev_payload_header_bits.tobytes())
+    rev_payload_data = bytearray(rev_payload_data_bits.tobytes())
 
     await tb.port_mac[0].rx.send(payload)
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    assert inverted_payload == echo_tx_pkt.data
+    assert rev_payload_data == echo_tx_pkt.data
+
+    tb.log.info("Jigsaw random pkt test: underfull 512 bit packet")
+
+    jigsaw_id_width = 4
+    jigsaw_op_width = 4
+    jigsaw_addr_width = 64
+    jigsaw_len_width = 16
+    jigsaw_data_width = 400
+    
+    payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
+
+    payload = bytearray(payload_bits.tobytes())
+    rev_payload_header = bytearray(rev_payload_header_bits.tobytes())
+    rev_payload_data = bytearray(rev_payload_data_bits.tobytes())
+
+    await tb.port_mac[0].rx.send(payload)
+
+    echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+    assert rev_payload_data == echo_tx_pkt.data
 
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
