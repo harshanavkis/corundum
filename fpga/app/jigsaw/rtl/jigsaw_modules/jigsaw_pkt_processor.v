@@ -34,28 +34,74 @@ module jigsaw_pkt_processor #(
     localparam LEN_POS = ADDR_POS + ADDR_WIDTH;
     localparam DATA_POS = LEN_POS + LEN_WIDTH;
     localparam KEEP_HEADER = (ID_WIDTH + OP_WIDTH + ADDR_WIDTH + LEN_WIDTH)/8;
+
+    // State machine states
+    localparam STATE_IDLE = 2'b00;
+    localparam STATE_FIRST_BEAT = 2'b01;
+    localparam STATE_MIDDLE_BEAT = 2'b10;
     
-    // // Header packet
-    // assign m_axis_sync_tx_tdata = {
-    //     s_axis_sync_rx_tdata[ID_POS +: ID_WIDTH],
-    //     s_axis_sync_rx_tdata[OP_POS +: OP_WIDTH],
-    //     s_axis_sync_rx_tdata[ADDR_POS +: ADDR_WIDTH],
-    //     s_axis_sync_rx_tdata[LEN_POS +: LEN_WIDTH]
-    // };
-
-    // assign m_axis_sync_tx_tkeep = s_axis_sync_rx_tkeep[0 +: KEEP_HEADER];
-    // /////////////////////
-
-    // Data packet
-    assign m_axis_sync_tx_tdata = s_axis_sync_rx_tdata[AXI_DATA_WIDTH-1: DATA_POS];
-    assign m_axis_sync_tx_tkeep = s_axis_sync_rx_tkeep[KEEP_WIDTH-1: KEEP_HEADER];
-    /////////////////////
-
+    // State registers
+    reg [1:0] current_state, next_state;
+    
+    // State machine transition logic
+    always @(posedge clk) begin
+        if (rst) begin
+            current_state <= STATE_IDLE;
+        end else begin
+            current_state <= next_state;
+        end
+    end
+    
+    // Next state logic
+    always @(*) begin
+        next_state = current_state;
+        
+        case (current_state)
+            STATE_IDLE: begin
+                if (s_axis_sync_rx_tvalid && s_axis_sync_rx_tready) begin
+                    next_state = s_axis_sync_rx_tlast ? STATE_IDLE : STATE_FIRST_BEAT;
+                end
+            end
+            
+            STATE_FIRST_BEAT, STATE_MIDDLE_BEAT: begin
+                if (s_axis_sync_rx_tvalid && s_axis_sync_rx_tready) begin
+                    if (s_axis_sync_rx_tlast)
+                        next_state = STATE_IDLE;
+                    else
+                        next_state = STATE_MIDDLE_BEAT;
+                end
+            end
+            
+            default: next_state = STATE_IDLE;
+        endcase
+    end
+    
+    // Output data and keep signals based on state
+    reg [AXI_DATA_WIDTH-1:0] tx_tdata_reg;
+    reg [KEEP_WIDTH-1:0] tx_tkeep_reg;
+    
+    // Output generation logic
+    always @(*) begin
+        // Default assignments
+        if (current_state == STATE_IDLE) begin
+            // For first beat, extract only data portion after header
+            tx_tdata_reg = {{(DATA_POS){1'b0}}, s_axis_sync_rx_tdata[AXI_DATA_WIDTH-1:DATA_POS]};
+            tx_tkeep_reg = {{(KEEP_HEADER){1'b0}}, s_axis_sync_rx_tkeep[KEEP_WIDTH-1:KEEP_HEADER]};
+        end else begin
+            // For subsequent beats, pass through all data
+            tx_tdata_reg = s_axis_sync_rx_tdata;
+            tx_tkeep_reg = s_axis_sync_rx_tkeep;
+        end
+    end
+    
+    // Output assignments
+    assign m_axis_sync_tx_tdata = tx_tdata_reg;
+    assign m_axis_sync_tx_tkeep = tx_tkeep_reg;
     assign m_axis_sync_tx_tvalid = s_axis_sync_rx_tvalid;
-    assign s_axis_sync_rx_tready = m_axis_sync_tx_tready;
     assign m_axis_sync_tx_tlast = s_axis_sync_rx_tlast;
     assign m_axis_sync_tx_tuser = s_axis_sync_rx_tuser;
-
-
+    
+    // Ready signal - we're ready to accept data if the downstream module is ready
+    assign s_axis_sync_rx_tready = m_axis_sync_tx_tready;
 
 endmodule
