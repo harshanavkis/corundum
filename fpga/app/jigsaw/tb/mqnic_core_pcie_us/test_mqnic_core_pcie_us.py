@@ -487,7 +487,7 @@ async def run_test_nic(dut):
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    assert rev_payload_data == echo_tx_pkt.data
+    assert payload == echo_tx_pkt.data
 
     tb.log.info("Jigsaw random pkt test: underfull 512 bit packet")
 
@@ -507,7 +507,49 @@ async def run_test_nic(dut):
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    assert rev_payload_data == echo_tx_pkt.data
+    assert payload == echo_tx_pkt.data
+
+    tb.log.info("Jigsaw random pkt test: varying data sizes but last full")
+
+    jigsaw_id_width = 4
+    jigsaw_op_width = 4
+    jigsaw_addr_width = 64
+    jigsaw_len_width = 16
+    data_widths = [512, 1024, 2048, 4096, 8192]
+    
+    for jigsaw_data_width in data_widths:
+        payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
+
+        payload = bytearray(payload_bits.tobytes())
+        rev_payload_header = bytearray(rev_payload_header_bits.tobytes())
+        rev_payload_data = bytearray(rev_payload_data_bits.tobytes())
+
+        await tb.port_mac[0].rx.send(payload)
+
+        echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+        assert payload == echo_tx_pkt.data
+    
+    tb.log.info("Jigsaw random pkt test: varying data sizes but last underfull")
+
+    jigsaw_id_width = 4
+    jigsaw_op_width = 4
+    jigsaw_addr_width = 64
+    jigsaw_len_width = 16
+    data_widths = [512, 1024, 2048, 4096, 8192]
+    
+    for jigsaw_data_width in data_widths:
+        payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width+8)
+
+        payload = bytearray(payload_bits.tobytes())
+        rev_payload_header = bytearray(rev_payload_header_bits.tobytes())
+        rev_payload_data = bytearray(rev_payload_data_bits.tobytes())
+
+        await tb.port_mac[0].rx.send(payload)
+
+        echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+        assert payload == echo_tx_pkt.data
 
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)

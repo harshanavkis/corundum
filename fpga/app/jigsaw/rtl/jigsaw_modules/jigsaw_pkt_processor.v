@@ -34,28 +34,94 @@ module jigsaw_pkt_processor #(
     localparam LEN_POS = ADDR_POS + ADDR_WIDTH;
     localparam DATA_POS = LEN_POS + LEN_WIDTH;
     localparam KEEP_HEADER = (ID_WIDTH + OP_WIDTH + ADDR_WIDTH + LEN_WIDTH)/8;
-    
-    // // Header packet
-    // assign m_axis_sync_tx_tdata = {
-    //     s_axis_sync_rx_tdata[ID_POS +: ID_WIDTH],
-    //     s_axis_sync_rx_tdata[OP_POS +: OP_WIDTH],
-    //     s_axis_sync_rx_tdata[ADDR_POS +: ADDR_WIDTH],
-    //     s_axis_sync_rx_tdata[LEN_POS +: LEN_WIDTH]
-    // };
 
-    // assign m_axis_sync_tx_tkeep = s_axis_sync_rx_tkeep[0 +: KEEP_HEADER];
-    // /////////////////////
+    // Internal signals for 128-bit AXI streams (AES-GCM native width)
+    wire [127:0] aes_in_tdata;
+    wire [15:0] aes_in_tkeep;
+    wire aes_in_tvalid;
+    wire aes_in_tready;
+    wire aes_in_tlast;
+    wire aes_in_tuser;
 
-    // Data packet
-    assign m_axis_sync_tx_tdata = s_axis_sync_rx_tdata[AXI_DATA_WIDTH-1: DATA_POS];
-    assign m_axis_sync_tx_tkeep = s_axis_sync_rx_tkeep[KEEP_WIDTH-1: KEEP_HEADER];
-    /////////////////////
+    wire [127:0] aes_out_tdata;
+    wire [15:0] aes_out_tkeep;
+    wire aes_out_tvalid;
+    wire aes_out_tready;
+    wire aes_out_tlast;
+    wire aes_out_tuser;
+        
+    // AXI Stream width adapter: 512-bit input to 128-bit for AES
+    axis_adapter #(
+        .S_DATA_WIDTH(512),
+        .S_KEEP_ENABLE(1),
+        .S_KEEP_WIDTH(64),
+        .M_DATA_WIDTH(128),
+        .M_KEEP_ENABLE(1),
+        .M_KEEP_WIDTH(16),
+        .ID_ENABLE(0),
+        .DEST_ENABLE(0),
+        .USER_ENABLE(1),
+        .USER_WIDTH(1)
+    ) input_adapter (
+        .clk(clk),
+        .rst(rst),
+        
+        // 512-bit input
+        .s_axis_tdata(s_axis_sync_rx_tdata),
+        .s_axis_tkeep(s_axis_sync_rx_tkeep),
+        .s_axis_tvalid(s_axis_sync_rx_tvalid),
+        .s_axis_tready(s_axis_sync_rx_tready),
+        .s_axis_tlast(s_axis_sync_rx_tlast),
+        .s_axis_tid(8'h0),
+        .s_axis_tdest(8'h0),
+        .s_axis_tuser(s_axis_sync_rx_tuser),
+        
+        // 128-bit output to AES
+        .m_axis_tdata(aes_in_tdata),
+        .m_axis_tkeep(aes_in_tkeep),
+        .m_axis_tvalid(aes_in_tvalid),
+        .m_axis_tready(aes_in_tready),
+        .m_axis_tlast(aes_in_tlast),
+        .m_axis_tid(),
+        .m_axis_tdest(),
+        .m_axis_tuser(aes_in_tuser)
+    );
 
-    assign m_axis_sync_tx_tvalid = s_axis_sync_rx_tvalid;
-    assign s_axis_sync_rx_tready = m_axis_sync_tx_tready;
-    assign m_axis_sync_tx_tlast = s_axis_sync_rx_tlast;
-    assign m_axis_sync_tx_tuser = s_axis_sync_rx_tuser;
-
+    axis_adapter #(
+        .S_DATA_WIDTH(128),
+        .S_KEEP_ENABLE(1),
+        .S_KEEP_WIDTH(16),
+        .M_DATA_WIDTH(512),
+        .M_KEEP_ENABLE(1),
+        .M_KEEP_WIDTH(64),
+        .ID_ENABLE(0),
+        .DEST_ENABLE(0),
+        .USER_ENABLE(1),
+        .USER_WIDTH(1)
+    ) output_adapter (
+        .clk(clk),
+        .rst(rst),
+        
+        // 128-bit input from AES
+        .s_axis_tdata(aes_in_tdata),
+        .s_axis_tkeep(aes_in_tkeep),
+        .s_axis_tvalid(aes_in_tvalid),
+        .s_axis_tready(aes_in_tready),
+        .s_axis_tlast(aes_in_tlast),
+        .s_axis_tid(8'h0),
+        .s_axis_tdest(8'h0),
+        .s_axis_tuser(aes_in_tuser),
+        
+        // 512-bit output
+        .m_axis_tdata(m_axis_sync_tx_tdata),
+        .m_axis_tkeep(m_axis_sync_tx_tkeep),
+        .m_axis_tvalid(m_axis_sync_tx_tvalid),
+        .m_axis_tready(m_axis_sync_tx_tready),
+        .m_axis_tlast(m_axis_sync_tx_tlast),
+        .m_axis_tid(),
+        .m_axis_tdest(),
+        .m_axis_tuser(m_axis_sync_tx_tuser)
+    );
 
 
 endmodule
