@@ -24,6 +24,9 @@ from cocotbext.eth import EthMac
 from cocotbext.pcie.core import RootComplex
 from cocotbext.pcie.xilinx.us import UltraScalePlusPcieDevice
 
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+
 from bitarray import bitarray
 import random
 
@@ -469,6 +472,10 @@ async def run_test_nic(dut):
 
     tb.log.info("Init complete")
 
+    # AES-256 key and 12-byte IV (all zero)
+    key = bytes(32)
+    iv = bytes(12)
+
     tb.log.info("Jigsaw random pkt test: 512 bit packet")
 
     jigsaw_id_width = 4
@@ -483,11 +490,24 @@ async def run_test_nic(dut):
     rev_payload_header = bytearray(rev_payload_header_bits.tobytes())
     rev_payload_data = bytearray(rev_payload_data_bits.tobytes())
 
+    ##### Encryption logic
+
+    # Initialize AES-GCM cipher
+    encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
+
+    # Encrypt the plaintext
+    ciphertext = encryptor.update(payload) + encryptor.finalize()
+    ##########################
+
     await tb.port_mac[0].rx.send(payload)
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    assert payload == echo_tx_pkt.data
+    assert ciphertext == echo_tx_pkt.data
 
     tb.log.info("Jigsaw random pkt test: underfull 512 bit packet")
 
@@ -500,14 +520,25 @@ async def run_test_nic(dut):
     payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
 
     payload = bytearray(payload_bits.tobytes())
-    rev_payload_header = bytearray(rev_payload_header_bits.tobytes())
-    rev_payload_data = bytearray(rev_payload_data_bits.tobytes())
+    
+    ##### Encryption logic
+
+    # Initialize AES-GCM cipher
+    encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
+
+    # Encrypt the plaintext
+    ciphertext = encryptor.update(payload) + encryptor.finalize()
+    ##########################
 
     await tb.port_mac[0].rx.send(payload)
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    assert payload == echo_tx_pkt.data
+    assert ciphertext == echo_tx_pkt.data
 
     tb.log.info("Jigsaw random pkt test: varying data sizes but last full")
 
@@ -524,11 +555,24 @@ async def run_test_nic(dut):
         rev_payload_header = bytearray(rev_payload_header_bits.tobytes())
         rev_payload_data = bytearray(rev_payload_data_bits.tobytes())
 
+        ##### Encryption logic
+
+        # Initialize AES-GCM cipher
+        encryptor = Cipher(
+            algorithms.AES(key),
+            modes.GCM(iv),
+            backend=default_backend()
+        ).encryptor()
+
+        # Encrypt the plaintext
+        ciphertext = encryptor.update(payload) + encryptor.finalize()
+        ##########################
+
         await tb.port_mac[0].rx.send(payload)
 
         echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-        assert payload == echo_tx_pkt.data
+        assert ciphertext == echo_tx_pkt.data
     
     tb.log.info("Jigsaw random pkt test: varying data sizes but last underfull")
 
@@ -545,11 +589,24 @@ async def run_test_nic(dut):
         rev_payload_header = bytearray(rev_payload_header_bits.tobytes())
         rev_payload_data = bytearray(rev_payload_data_bits.tobytes())
 
+        ##### Encryption logic
+
+        # Initialize AES-GCM cipher
+        encryptor = Cipher(
+            algorithms.AES(key),
+            modes.GCM(iv),
+            backend=default_backend()
+        ).encryptor()
+
+        # Encrypt the plaintext
+        ciphertext = encryptor.update(payload) + encryptor.finalize()
+        ##########################
+
         await tb.port_mac[0].rx.send(payload)
 
         echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-        assert payload == echo_tx_pkt.data
+        assert ciphertext == echo_tx_pkt.data
 
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
