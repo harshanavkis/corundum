@@ -503,14 +503,14 @@ async def run_test_nic(dut):
     ciphertext = encryptor.update(payload) + encryptor.finalize()
     ##########################
 
-    await tb.port_mac[0].rx.send(payload)
+    await tb.port_mac[0].rx.send(ciphertext)
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    print("Length of transmitted payload: ", len(payload))
+    print("Length of transmitted payload: ", len(ciphertext))
     print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
 
-    assert ciphertext == echo_tx_pkt.data[:-16]
+    assert payload == echo_tx_pkt.data[:-16]
     assert encryptor.tag == echo_tx_pkt.data[-16:]
 
     tb.log.info("Jigsaw random pkt test: underfull 512 bit packet")
@@ -538,14 +538,14 @@ async def run_test_nic(dut):
     ciphertext = encryptor.update(payload) + encryptor.finalize()
     ##########################
 
-    await tb.port_mac[0].rx.send(payload)
+    await tb.port_mac[0].rx.send(ciphertext)
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    print("Length of transmitted payload: ", len(payload))
+    print("Length of transmitted payload: ", len(ciphertext))
     print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
 
-    assert ciphertext == echo_tx_pkt.data[:-16]
+    assert payload == echo_tx_pkt.data[:-16]
     assert encryptor.tag == echo_tx_pkt.data[-16:]
 
     tb.log.info("Jigsaw random pkt test: varying data sizes but last full")
@@ -576,14 +576,14 @@ async def run_test_nic(dut):
         ciphertext = encryptor.update(payload) + encryptor.finalize()
         ##########################
 
-        await tb.port_mac[0].rx.send(payload)
+        await tb.port_mac[0].rx.send(ciphertext)
 
         echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-        print("Length of transmitted payload: ", len(payload))
+        print("Length of transmitted payload: ", len(ciphertext))
         print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
 
-        assert ciphertext == echo_tx_pkt.data[:-16]
+        assert payload == echo_tx_pkt.data[:-16]
         assert encryptor.tag == echo_tx_pkt.data[-16:]
     
     tb.log.info("Jigsaw random pkt test: varying data sizes but last underfull")
@@ -614,14 +614,14 @@ async def run_test_nic(dut):
         ciphertext = encryptor.update(payload) + encryptor.finalize()
         ##########################
 
-        await tb.port_mac[0].rx.send(payload)
+        await tb.port_mac[0].rx.send(ciphertext)
 
         echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-        print("Length of transmitted payload: ", len(payload))
+        print("Length of transmitted payload: ", len(ciphertext))
         print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
 
-        assert ciphertext == echo_tx_pkt.data[:-16]
+        assert payload == echo_tx_pkt.data[:-16]
         assert encryptor.tag == echo_tx_pkt.data[-16:]
 
     await RisingEdge(dut.clk)

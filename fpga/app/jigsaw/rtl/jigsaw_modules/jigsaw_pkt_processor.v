@@ -149,7 +149,7 @@ module jigsaw_pkt_processor #(
         .rst_i(aes_gcm_pipe_reset),
         .clk_i(clk),
         .aes_gcm_mode_i(2'b10),
-        .aes_gcm_enc_dec_i(1'b0),
+        .aes_gcm_enc_dec_i(1'b1),
         .aes_gcm_pipe_reset_i(aes_gcm_pipe_reset),
         .aes_gcm_key_word_val_i(aes_gcm_key_word_val),
         .aes_gcm_key_word_i(aes_gcm_key),
