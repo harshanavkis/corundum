@@ -141,12 +141,12 @@ module jigsaw_pkt_processor #(
     assign aes_gcm_data_in = aes_in_tvalid ? aes_in_tdata_be : 128'h0;
     assign aes_gcm_icb_stop_cnt = aes_in_tvalid ? aes_in_tlast : 1'b0;
 
-    assign aes_in_tready = aes_gcm_ready;
+    assign aes_in_tready = (!init_busy_o) && aes_gcm_ready;
 
     assign aes_gcm_ghash_pkt_val = aes_in_tvalid;
 
     top_aes_gcm aes_gcm_core (
-        .rst_i(rst),
+        .rst_i(aes_gcm_pipe_reset),
         .clk_i(clk),
         .aes_gcm_mode_i(2'b10),
         .aes_gcm_enc_dec_i(1'b0),
@@ -181,10 +181,20 @@ module jigsaw_pkt_processor #(
        .tkeep_out(aes_out_tkeep_le)
    );
 
-   assign aes_out_tdata = aes_out_tdata_le;
-   assign aes_out_tkeep = aes_out_tkeep_le;
-   assign aes_out_tvalid = aes_gcm_data_out_val;
-   assign aes_out_tlast = aes_in_tvalid ? 1'b0 : (aes_gcm_data_out_val ? 1'b1 : 1'b0);
+   wire [127:0] aes_gcm_ghash_tag_le;
+   wire [15:0] aes_gcm_ghash_tkeep_le;
+
+   endian_swap hash_be_to_le(
+       .data_in(aes_gcm_ghash_tag),
+       .tkeep_in(16'hFFFF),
+       .data_out(aes_gcm_ghash_tag_le),
+       .tkeep_out(aes_gcm_ghash_tkeep_le)
+   );
+
+   assign aes_out_tdata = aes_gcm_ghash_tag_val ? aes_gcm_ghash_tag_le : aes_out_tdata_le;
+   assign aes_out_tkeep = aes_gcm_ghash_tag_val ? aes_gcm_ghash_tkeep_le : aes_out_tkeep_le;
+   assign aes_out_tvalid = aes_gcm_ghash_tag_val ? aes_gcm_ghash_tag_val : aes_gcm_data_out_val;
+   assign aes_out_tlast = aes_in_tvalid ? 1'b0 : (aes_gcm_ghash_tag_val ? 1'b1 : 1'b0);
         
     // AXI Stream width adapter: 512-bit input to 128-bit for AES
     axis_adapter #(
