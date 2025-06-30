@@ -49,6 +49,29 @@ module jigsaw_pkt_processor #(
     wire aes_out_tready;
     wire aes_out_tlast;
     wire aes_out_tuser;
+    wire ghash_tag_val;
+
+    reg pause_decrypted_transmit;
+    wire tx_last;
+
+    assign m_axis_sync_tx_tlast = tx_last;
+
+    always @ (posedge clk) begin
+        // If reset is asserted, go back to IDLE state
+        if (rst) begin
+            pause_decrypted_transmit <= 1'b1;
+
+        // Else transition to the next state
+        end else begin
+            if (ghash_tag_val) begin
+                pause_decrypted_transmit <= 1'b0;
+            end
+
+            if (!pause_decrypted_transmit && tx_last) begin
+                pause_decrypted_transmit <= 1'b1;
+            end
+        end
+    end
         
     // AXI Stream width adapter: 512-bit input to 128-bit for AES
     axis_adapter #(
@@ -102,10 +125,12 @@ module jigsaw_pkt_processor #(
         .aes_out_tvalid(aes_out_tvalid),
         .aes_out_tready(aes_out_tready),
         .aes_out_tlast(aes_out_tlast),
-        .aes_out_tuser(aes_out_tuser)
+        .aes_out_tuser(aes_out_tuser),
+        .ghash_tag_val(ghash_tag_val)
     );
 
-    axis_adapter #(
+    axis_fifo_adapter #(
+        .DEPTH(1024),
         .S_DATA_WIDTH(128),
         .S_KEEP_ENABLE(1),
         .S_KEEP_WIDTH(16),
@@ -115,6 +140,7 @@ module jigsaw_pkt_processor #(
         .ID_ENABLE(0),
         .DEST_ENABLE(0),
         .USER_ENABLE(1),
+        .PAUSE_ENABLE(1),
         .USER_WIDTH(1)
     ) output_adapter (
         .clk(clk),
@@ -135,10 +161,18 @@ module jigsaw_pkt_processor #(
         .m_axis_tkeep(m_axis_sync_tx_tkeep),
         .m_axis_tvalid(m_axis_sync_tx_tvalid),
         .m_axis_tready(m_axis_sync_tx_tready),
-        .m_axis_tlast(m_axis_sync_tx_tlast),
+        .m_axis_tlast(tx_last),
         .m_axis_tid(),
         .m_axis_tdest(),
-        .m_axis_tuser(m_axis_sync_tx_tuser)
+        .m_axis_tuser(m_axis_sync_tx_tuser),
+
+        .pause_req(pause_decrypted_transmit),
+        .pause_ack(),
+        .status_depth(),
+        .status_depth_commit(),
+        .status_overflow(),
+        .status_bad_frame(),
+        .status_good_frame()
     );
 
 

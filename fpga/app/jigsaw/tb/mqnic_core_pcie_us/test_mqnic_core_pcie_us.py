@@ -554,7 +554,7 @@ async def run_test_nic(dut):
     jigsaw_op_width = 4
     jigsaw_addr_width = 64
     jigsaw_len_width = 16
-    data_widths = [512, 1024, 2048, 4096, 8192]
+    data_widths = [424, 936, 1960, 4008, 8104]
     
     for jigsaw_data_width in data_widths:
         payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
@@ -595,7 +595,7 @@ async def run_test_nic(dut):
     data_widths = [512, 1024, 2048, 4096, 8192]
     
     for jigsaw_data_width in data_widths:
-        payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width+8)
+        payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
 
         payload = bytearray(payload_bits.tobytes())
         rev_payload_header = bytearray(rev_payload_header_bits.tobytes())
