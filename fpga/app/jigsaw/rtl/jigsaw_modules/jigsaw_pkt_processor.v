@@ -189,6 +189,30 @@ module jigsaw_pkt_processor #(
         .status_good_frame()
     );
 
+    wire [AXI_DATA_WIDTH - 1:0] txn_generator_out_tdata;
+    wire [KEEP_WIDTH - 1:0] txn_generator_out_tkeep;
+    wire txn_generator_out_tvalid;
+    wire txn_generator_out_tready;
+    wire txn_generator_out_tlast;
+    wire txn_generator_out_tuser;
+
+    txn_generator txner(
+        .clk(clk),
+        .rst(rst),
+        .txn_generator_in_tdata(decrypted_tdata),
+        .txn_generator_in_tkeep(decrypted_tkeep),
+        .txn_generator_in_tvalid(decrypted_tvalid),
+        .txn_generator_in_tready(decrypted_tready),
+        .txn_generator_in_tlast(decrypted_tlast),
+        .txn_generator_in_tuser(decrypted_tuser),
+        .txn_generator_out_tdata(txn_generator_out_tdata),
+        .txn_generator_out_tkeep(txn_generator_out_tkeep),
+        .txn_generator_out_tvalid(txn_generator_out_tvalid),
+        .txn_generator_out_tready(txn_generator_out_tready),
+        .txn_generator_out_tlast(txn_generator_out_tlast),
+        .txn_generator_out_tuser(txn_generator_out_tuser)
+    );
+
     wire [127:0] encrypt_in_tdata;
     wire [15:0] encrypt_in_tkeep;
     wire encrypt_in_tvalid;
@@ -220,14 +244,14 @@ module jigsaw_pkt_processor #(
         .rst(rst),
         
         // 512-bit input
-        .s_axis_tdata(decrypted_tdata),
-        .s_axis_tkeep(decrypted_tkeep),
-        .s_axis_tvalid(decrypted_tvalid),
-        .s_axis_tready(decrypted_tready),
-        .s_axis_tlast(decrypted_tlast),
+        .s_axis_tdata(txn_generator_out_tdata),
+        .s_axis_tkeep(txn_generator_out_tkeep),
+        .s_axis_tvalid(txn_generator_out_tvalid),
+        .s_axis_tready(txn_generator_out_tready),
+        .s_axis_tlast(txn_generator_out_tlast),
         .s_axis_tid(8'h0),
         .s_axis_tdest(8'h0),
-        .s_axis_tuser(decrypted_tuser),
+        .s_axis_tuser(txn_generator_out_tuser),
         
         // 128-bit output to AES
         .m_axis_tdata(encrypt_in_tdata),
