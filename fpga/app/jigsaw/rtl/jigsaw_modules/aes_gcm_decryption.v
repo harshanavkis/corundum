@@ -1,4 +1,4 @@
-module aes_gcm_encryption
+module aes_gcm_decryption
 (
     input  wire clk,
     input  wire rst,

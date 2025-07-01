@@ -110,7 +110,7 @@ module jigsaw_pkt_processor #(
         .m_axis_tuser(aes_in_tuser)
     );
 
-    aes_gcm_encryption encr_module(
+    aes_gcm_decryption decr_module(
         .clk(clk),
         .rst(rst),
         .enc_dec(1'b1),
