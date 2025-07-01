@@ -72,6 +72,13 @@ module jigsaw_pkt_processor #(
             end
         end
     end
+
+    wire [AXI_DATA_WIDTH - 1:0] decrypted_tdata;
+    wire [KEEP_WIDTH - 1:0] decrypted_tkeep;
+    wire decrypted_tvalid;
+    wire decrypted_tready;
+    wire decrypted_tlast;
+    wire decrypted_tuser;
         
     // AXI Stream width adapter: 512-bit input to 128-bit for AES
     axis_adapter #(
@@ -85,7 +92,7 @@ module jigsaw_pkt_processor #(
         .DEST_ENABLE(0),
         .USER_ENABLE(1),
         .USER_WIDTH(1)
-    ) input_adapter (
+    ) decryption_input_adapter (
         .clk(clk),
         .rst(rst),
         
@@ -110,6 +117,13 @@ module jigsaw_pkt_processor #(
         .m_axis_tuser(aes_in_tuser)
     );
 
+    wire [127:0] decrypt_core_out_tdata;
+    wire [15:0] decrypt_core_out_tkeep;
+    wire decrypt_core_out_tvalid;
+    wire decrypt_core_out_tready;
+    wire decrypt_core_out_tlast;
+    wire decrypt_core_out_tuser;
+
     aes_gcm_decryption decr_module(
         .clk(clk),
         .rst(rst),
@@ -120,12 +134,12 @@ module jigsaw_pkt_processor #(
         .aes_in_tready(aes_in_tready),
         .aes_in_tlast(aes_in_tlast),
         .aes_in_tuser(aes_in_tuser),
-        .aes_out_tdata(aes_out_tdata),
-        .aes_out_tkeep(aes_out_tkeep),
-        .aes_out_tvalid(aes_out_tvalid),
-        .aes_out_tready(aes_out_tready),
-        .aes_out_tlast(aes_out_tlast),
-        .aes_out_tuser(aes_out_tuser),
+        .aes_out_tdata(decrypt_core_out_tdata),
+        .aes_out_tkeep(decrypt_core_out_tkeep),
+        .aes_out_tvalid(decrypt_core_out_tvalid),
+        .aes_out_tready(decrypt_core_out_tready),
+        .aes_out_tlast(decrypt_core_out_tlast),
+        .aes_out_tuser(decrypt_core_out_tuser),
         .ghash_tag_val(ghash_tag_val)
     );
 
@@ -142,16 +156,129 @@ module jigsaw_pkt_processor #(
         .USER_ENABLE(1),
         .PAUSE_ENABLE(1),
         .USER_WIDTH(1)
-    ) output_adapter (
+    ) decryption_out_fifo (
         .clk(clk),
         .rst(rst),
         
         // 128-bit input from AES
-        .s_axis_tdata(aes_out_tdata),
-        .s_axis_tkeep(aes_out_tkeep),
-        .s_axis_tvalid(aes_out_tvalid),
-        .s_axis_tready(aes_out_tready),
-        .s_axis_tlast(aes_out_tlast),
+        .s_axis_tdata(decrypt_core_out_tdata),
+        .s_axis_tkeep(decrypt_core_out_tkeep),
+        .s_axis_tvalid(decrypt_core_out_tvalid),
+        .s_axis_tready(decrypt_core_out_tready),
+        .s_axis_tlast(decrypt_core_out_tlast),
+        .s_axis_tid(8'h0),
+        .s_axis_tdest(8'h0),
+        .s_axis_tuser(1'h0),
+        
+        // 512-bit output
+        .m_axis_tdata(decrypted_tdata),
+        .m_axis_tkeep(decrypted_tkeep),
+        .m_axis_tvalid(decrypted_tvalid),
+        .m_axis_tready(decrypted_tready),
+        .m_axis_tlast(decrypted_tlast),
+        .m_axis_tid(),
+        .m_axis_tdest(),
+        .m_axis_tuser(decrypted_tuser),
+
+        .pause_req(pause_decrypted_transmit),
+        .pause_ack(),
+        .status_depth(),
+        .status_depth_commit(),
+        .status_overflow(),
+        .status_bad_frame(),
+        .status_good_frame()
+    );
+
+    wire [127:0] encrypt_in_tdata;
+    wire [15:0] encrypt_in_tkeep;
+    wire encrypt_in_tvalid;
+    wire encrypt_in_tready;
+    wire encrypt_in_tlast;
+    wire encrypt_in_tuser;
+
+    wire [127:0] encrypt_out_tdata;
+    wire [15:0] encrypt_out_tkeep;
+    wire encrypt_out_tvalid;
+    wire encrypt_out_tready;
+    wire encrypt_out_tlast;
+    wire encrypt_out_tuser;
+
+    // AXI Stream width adapter: 512-bit input to 128-bit for AES-encryption
+    axis_adapter #(
+        .S_DATA_WIDTH(512),
+        .S_KEEP_ENABLE(1),
+        .S_KEEP_WIDTH(64),
+        .M_DATA_WIDTH(128),
+        .M_KEEP_ENABLE(1),
+        .M_KEEP_WIDTH(16),
+        .ID_ENABLE(0),
+        .DEST_ENABLE(0),
+        .USER_ENABLE(1),
+        .USER_WIDTH(1)
+    ) encryption_input_adapter (
+        .clk(clk),
+        .rst(rst),
+        
+        // 512-bit input
+        .s_axis_tdata(decrypted_tdata),
+        .s_axis_tkeep(decrypted_tkeep),
+        .s_axis_tvalid(decrypted_tvalid),
+        .s_axis_tready(decrypted_tready),
+        .s_axis_tlast(decrypted_tlast),
+        .s_axis_tid(8'h0),
+        .s_axis_tdest(8'h0),
+        .s_axis_tuser(decrypted_tuser),
+        
+        // 128-bit output to AES
+        .m_axis_tdata(encrypt_in_tdata),
+        .m_axis_tkeep(encrypt_in_tkeep),
+        .m_axis_tvalid(encrypt_in_tvalid),
+        .m_axis_tready(encrypt_in_tready),
+        .m_axis_tlast(encrypt_in_tlast),
+        .m_axis_tid(),
+        .m_axis_tdest(),
+        .m_axis_tuser(encrypt_in_tuser)
+    );
+
+    aes_gcm_encryption encr_module(
+        .clk(clk),
+        .rst(rst),
+        .enc_dec(1'b0),
+        .aes_in_tdata(encrypt_in_tdata),
+        .aes_in_tkeep(encrypt_in_tkeep),
+        .aes_in_tvalid(encrypt_in_tvalid),
+        .aes_in_tready(encrypt_in_tready),
+        .aes_in_tlast(encrypt_in_tlast),
+        .aes_in_tuser(encrypt_in_tuser),
+        .aes_out_tdata(encrypt_out_tdata),
+        .aes_out_tkeep(encrypt_out_tkeep),
+        .aes_out_tvalid(encrypt_out_tvalid),
+        .aes_out_tready(encrypt_out_tready),
+        .aes_out_tlast(encrypt_out_tlast),
+        .aes_out_tuser(encrypt_out_tuser)
+    );
+
+    axis_adapter #(
+        .S_DATA_WIDTH(128),
+        .S_KEEP_ENABLE(1),
+        .S_KEEP_WIDTH(16),
+        .M_DATA_WIDTH(512),
+        .M_KEEP_ENABLE(1),
+        .M_KEEP_WIDTH(64),
+        .ID_ENABLE(0),
+        .DEST_ENABLE(0),
+        .USER_ENABLE(1),
+        .USER_WIDTH(1)
+    ) encryption_output_adapter (
+        .clk(clk),
+        .rst(rst),
+        
+        // 128-bit input from AES
+        .s_axis_tdata(encrypt_out_tdata),
+        .s_axis_tkeep(encrypt_out_tkeep),
+        .s_axis_tvalid(encrypt_out_tvalid),
+        .s_axis_tready(encrypt_out_tready),
+        .s_axis_tlast(encrypt_out_tlast),
         .s_axis_tid(8'h0),
         .s_axis_tdest(8'h0),
         .s_axis_tuser(1'h0),
@@ -161,18 +288,10 @@ module jigsaw_pkt_processor #(
         .m_axis_tkeep(m_axis_sync_tx_tkeep),
         .m_axis_tvalid(m_axis_sync_tx_tvalid),
         .m_axis_tready(m_axis_sync_tx_tready),
-        .m_axis_tlast(tx_last),
+        .m_axis_tlast(m_axis_sync_tx_tlast),
         .m_axis_tid(),
         .m_axis_tdest(),
-        .m_axis_tuser(m_axis_sync_tx_tuser),
-
-        .pause_req(pause_decrypted_transmit),
-        .pause_ack(),
-        .status_depth(),
-        .status_depth_commit(),
-        .status_overflow(),
-        .status_bad_frame(),
-        .status_good_frame()
+        .m_axis_tuser(m_axis_sync_tx_tuser)
     );
 
 
