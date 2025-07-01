@@ -50,17 +50,27 @@ module aes_gcm_encryption
     wire [127:0] aes_in_tdata_be;
     wire [15:0] aes_in_tkeep_be;
 
+    reg tag_read;
+    reg [127:0] input_gcm_tag;
+
     always @ (posedge clk) begin
         // If reset is asserted, go back to IDLE state
         if (rst) begin
             cur_state <= AES_IDLE;
+            tag_read <= 1'b0;
 
         // Else transition to the next state
         end else begin
             if (aes_out_tlast) begin
                 cur_state <= AES_IDLE;
+                tag_read <= 1'b0;
             end else begin
                 cur_state <= next_state;
+            end
+
+            if (aes_in_tvalid && !tag_read && aes_in_tready) begin // valid remains asserted until ready is high
+                tag_read <= 1'b1;
+                input_gcm_tag <= aes_in_tdata;
             end
         end
     end
@@ -110,13 +120,13 @@ module aes_gcm_encryption
         .tkeep_out(aes_in_tkeep_be)
     );
 
-    assign aes_gcm_data_in_bval = aes_in_tvalid ? aes_in_tkeep_be : 16'h0;
-    assign aes_gcm_data_in = aes_in_tvalid ? aes_in_tdata_be : 128'h0;
-    assign aes_gcm_icb_stop_cnt = aes_in_tvalid ? aes_in_tlast : 1'b0;
+    assign aes_gcm_data_in_bval = (aes_in_tvalid && tag_read) ? aes_in_tkeep_be : 16'h0;
+    assign aes_gcm_data_in = (aes_in_tvalid && tag_read) ? aes_in_tdata_be : 128'h0;
+    assign aes_gcm_icb_stop_cnt = (aes_in_tvalid && tag_read) ? aes_in_tlast : 1'b0;
 
-    assign aes_in_tready = (!init_busy_o) && aes_gcm_ready;
+    assign aes_in_tready = (!init_busy_o) && aes_gcm_ready; // FIX: Possible pipeline stall i.e. valid waits for ready
 
-    assign aes_gcm_ghash_pkt_val = aes_in_tvalid;
+    assign aes_gcm_ghash_pkt_val = (aes_in_tvalid && tag_read);
 
     top_aes_gcm aes_gcm_core (
         .rst_i(aes_gcm_pipe_reset),
@@ -164,10 +174,12 @@ module aes_gcm_encryption
        .tkeep_out(aes_gcm_ghash_tkeep_le)
    );
 
-   assign aes_out_tdata = aes_gcm_ghash_tag_val ? aes_gcm_ghash_tag_le : aes_out_tdata_le;
-   assign aes_out_tkeep = aes_gcm_ghash_tag_val ? aes_gcm_ghash_tkeep_le : aes_out_tkeep_le;
-   assign aes_out_tvalid = aes_gcm_ghash_tag_val ? aes_gcm_ghash_tag_val : aes_gcm_data_out_val;
-   assign aes_out_tlast = aes_in_tvalid ? 1'b0 : (aes_gcm_ghash_tag_val ? 1'b1 : 1'b0);
+   assign aes_out_tdata = aes_out_tdata_le;
+   assign aes_out_tkeep = aes_out_tkeep_le;
 
-   assign ghash_tag_val = aes_gcm_ghash_tag_val;
+   // TODO: Fix this as tlast and valid should fall down with last data block instead of tag
+   assign aes_out_tvalid = aes_gcm_ghash_tag_val ? aes_gcm_ghash_tag_val : aes_gcm_data_out_val;
+   assign aes_out_tlast = (aes_in_tvalid && tag_read) ? 1'b0 : (aes_gcm_ghash_tag_val ? 1'b1 : 1'b0);
+
+   assign ghash_tag_val = aes_gcm_ghash_tag_val && (input_gcm_tag == aes_gcm_ghash_tag_le);
 endmodule
