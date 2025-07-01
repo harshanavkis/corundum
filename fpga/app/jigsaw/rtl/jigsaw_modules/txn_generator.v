@@ -21,7 +21,7 @@ module txn_generator #(
     output wire txn_generator_out_tuser
 );
 
-    assign txn_generator_out_tdata = txn_generator_in_tdata;
+    assign txn_generator_out_tdata = ~txn_generator_in_tdata;
     assign txn_generator_out_tkeep = txn_generator_in_tkeep;
     assign txn_generator_out_tvalid = txn_generator_in_tvalid;
     assign txn_generator_in_tready = txn_generator_out_tready;

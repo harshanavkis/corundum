@@ -487,23 +487,29 @@ async def run_test_nic(dut):
     payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
 
     payload = bytearray(payload_bits.tobytes())
-    rev_payload_header = bytearray(rev_payload_header_bits.tobytes())
-    rev_payload_data = bytearray(rev_payload_data_bits.tobytes())
+    flipped = bytearray(b ^ 0xFF for b in payload)
 
     ##### Encryption logic
 
     # Initialize AES-GCM cipher
-    encryptor = Cipher(
+    payload_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
+
+    flipped_encryptor = Cipher(
         algorithms.AES(key),
         modes.GCM(iv),
         backend=default_backend()
     ).encryptor()
 
     # Encrypt the plaintext
-    ciphertext = encryptor.update(payload) + encryptor.finalize()
+    payload_ciphertext = payload_encryptor.update(payload) + payload_encryptor.finalize()
+    flipped_ciphertext = flipped_encryptor.update(flipped) + flipped_encryptor.finalize()
     ##########################
 
-    send_payload = encryptor.tag + ciphertext
+    send_payload = payload_encryptor.tag + payload_ciphertext
 
     await tb.port_mac[0].rx.send(send_payload)
 
@@ -512,8 +518,8 @@ async def run_test_nic(dut):
     print("Length of transmitted payload: ", len(send_payload))
     print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
 
-    assert ciphertext == echo_tx_pkt.data[:-16]
-    assert encryptor.tag == echo_tx_pkt.data[-16:]
+    assert flipped_ciphertext == echo_tx_pkt.data[:-16]
+    assert flipped_encryptor.tag == echo_tx_pkt.data[-16:]
 
     tb.log.info("Jigsaw random pkt test: underfull 512 bit packet")
 
@@ -526,21 +532,29 @@ async def run_test_nic(dut):
     payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
 
     payload = bytearray(payload_bits.tobytes())
+    flipped = bytearray(b ^ 0xFF for b in payload)
     
     ##### Encryption logic
 
     # Initialize AES-GCM cipher
-    encryptor = Cipher(
+    payload_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
+
+    flipped_encryptor = Cipher(
         algorithms.AES(key),
         modes.GCM(iv),
         backend=default_backend()
     ).encryptor()
 
     # Encrypt the plaintext
-    ciphertext = encryptor.update(payload) + encryptor.finalize()
+    payload_ciphertext = payload_encryptor.update(payload) + payload_encryptor.finalize()
+    flipped_ciphertext = flipped_encryptor.update(flipped) + flipped_encryptor.finalize()
     ##########################
 
-    send_payload = encryptor.tag + ciphertext
+    send_payload = payload_encryptor.tag + payload_ciphertext
 
     await tb.port_mac[0].rx.send(send_payload)
 
@@ -549,8 +563,8 @@ async def run_test_nic(dut):
     print("Length of transmitted payload: ", len(send_payload))
     print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
 
-    assert ciphertext == echo_tx_pkt.data[:-16]
-    assert encryptor.tag == echo_tx_pkt.data[-16:]
+    assert flipped_ciphertext == echo_tx_pkt.data[:-16]
+    assert flipped_encryptor.tag == echo_tx_pkt.data[-16:]
 
     tb.log.info("Jigsaw random pkt test: varying data sizes but last full")
 
@@ -564,23 +578,29 @@ async def run_test_nic(dut):
         payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
 
         payload = bytearray(payload_bits.tobytes())
-        rev_payload_header = bytearray(rev_payload_header_bits.tobytes())
-        rev_payload_data = bytearray(rev_payload_data_bits.tobytes())
+        flipped = bytearray(b ^ 0xFF for b in payload)
 
         ##### Encryption logic
 
         # Initialize AES-GCM cipher
-        encryptor = Cipher(
+        payload_encryptor = Cipher(
+            algorithms.AES(key),
+            modes.GCM(iv),
+            backend=default_backend()
+        ).encryptor()
+
+        flipped_encryptor = Cipher(
             algorithms.AES(key),
             modes.GCM(iv),
             backend=default_backend()
         ).encryptor()
 
         # Encrypt the plaintext
-        ciphertext = encryptor.update(payload) + encryptor.finalize()
+        payload_ciphertext = payload_encryptor.update(payload) + payload_encryptor.finalize()
+        flipped_ciphertext = flipped_encryptor.update(flipped) + flipped_encryptor.finalize()
         ##########################
 
-        send_payload = encryptor.tag + ciphertext
+        send_payload = payload_encryptor.tag + payload_ciphertext
 
         await tb.port_mac[0].rx.send(send_payload)
 
@@ -589,8 +609,8 @@ async def run_test_nic(dut):
         print("Length of transmitted payload: ", len(send_payload))
         print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
 
-        assert ciphertext == echo_tx_pkt.data[:-16]
-        assert encryptor.tag == echo_tx_pkt.data[-16:]
+        assert flipped_ciphertext == echo_tx_pkt.data[:-16]
+        assert flipped_encryptor.tag == echo_tx_pkt.data[-16:]
     
     tb.log.info("Jigsaw random pkt test: varying data sizes but last underfull")
 
@@ -604,23 +624,29 @@ async def run_test_nic(dut):
         payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
 
         payload = bytearray(payload_bits.tobytes())
-        rev_payload_header = bytearray(rev_payload_header_bits.tobytes())
-        rev_payload_data = bytearray(rev_payload_data_bits.tobytes())
+        flipped = bytearray(b ^ 0xFF for b in payload)
 
         ##### Encryption logic
 
         # Initialize AES-GCM cipher
-        encryptor = Cipher(
+        payload_encryptor = Cipher(
+            algorithms.AES(key),
+            modes.GCM(iv),
+            backend=default_backend()
+        ).encryptor()
+
+        flipped_encryptor = Cipher(
             algorithms.AES(key),
             modes.GCM(iv),
             backend=default_backend()
         ).encryptor()
 
         # Encrypt the plaintext
-        ciphertext = encryptor.update(payload) + encryptor.finalize()
+        payload_ciphertext = payload_encryptor.update(payload) + payload_encryptor.finalize()
+        flipped_ciphertext = flipped_encryptor.update(flipped) + flipped_encryptor.finalize()
         ##########################
 
-        send_payload = encryptor.tag + ciphertext
+        send_payload = payload_encryptor.tag + payload_ciphertext
 
         await tb.port_mac[0].rx.send(send_payload)
 
@@ -629,8 +655,8 @@ async def run_test_nic(dut):
         print("Length of transmitted payload: ", len(send_payload))
         print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
 
-        assert ciphertext == echo_tx_pkt.data[:-16]
-        assert encryptor.tag == echo_tx_pkt.data[-16:]
+        assert flipped_ciphertext == echo_tx_pkt.data[:-16]
+        assert flipped_encryptor.tag == echo_tx_pkt.data[-16:]
 
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
