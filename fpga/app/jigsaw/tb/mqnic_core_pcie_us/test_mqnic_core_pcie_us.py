@@ -458,6 +458,46 @@ def jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, ji
 
     return (payload_bits, rev_payload_header_bits, rev_payload_data_bits)
 
+def int_to_bitarray(num, width):
+    """Convert integer to bitarray of fixed width (MSB first)."""
+    if num >= (1 << width) or num < 0:
+        raise ValueError(f"Number {num} cannot fit in {width} bits.")
+    bin_str = bin(num)[2:].zfill(width)
+    return bitarray(bin_str)
+
+def int_to_little_endian_bitarray(value, bit_length):
+    num_bytes = bit_length // 8
+    b = value.to_bytes(num_bytes, byteorder='little')
+    bits = bitarray()
+    bits.frombytes(b)
+    return bits
+
+def jigsaw_mmio_packet_gen(op, addr, data_len):
+    op_bits = int_to_little_endian_bitarray(op, 8)
+    addr_bits = int_to_little_endian_bitarray(addr, 64)
+    len_bits = int_to_little_endian_bitarray(data_len, 64)
+    
+    payload_bits = bitarray()
+    payload_bits.extend(op_bits)
+    payload_bits.extend(addr_bits)
+    payload_bits.extend(len_bits)
+
+    if op == 0:  # mmio read
+        return bytearray(payload_bits), None
+
+    if op == 1:  # mmio write
+        data_bits = bitarray([random.choice([0, 1]) for _ in range(data_len*8)])
+        payload_bits.extend(data_bits)
+        return bytearray(payload_bits), bytearray(data_bits)
+
+def jigsaw_mmio_emu(addr, len):
+    if addr == 8:
+        b = bitarray(len)
+        b.setall(0)
+
+        return bytearray(b)
+        
+
 @cocotb.test()
 async def run_test_nic(dut):
 
@@ -476,18 +516,11 @@ async def run_test_nic(dut):
     key = bytes(32)
     iv = bytes(12)
 
-    tb.log.info("Jigsaw random pkt test: 512 bit packet")
+    tb.log.info("Jigsaw MMIO W/R: 0x0")
 
-    jigsaw_id_width = 4
-    jigsaw_op_width = 4
-    jigsaw_addr_width = 64
-    jigsaw_len_width = 16
-    jigsaw_data_width = 424
-    
-    payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
+    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 0, 8)
 
-    payload = bytearray(payload_bits.tobytes())
-    flipped = bytearray(b ^ 0xFF for b in payload)
+    print("send_payload: ", send_payload.hex())
 
     ##### Encryption logic
 
@@ -498,15 +531,41 @@ async def run_test_nic(dut):
         backend=default_backend()
     ).encryptor()
 
-    flipped_encryptor = Cipher(
+    # Encrypt the plaintext
+    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
+    ##########################
+
+    send_payload = payload_encryptor.tag + payload_ciphertext
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    # TODO: Weird, probably because if aes-gcm is not reset in time
+    # the queue after gcm doesn't flush if tag is not valid 
+    await Timer(250, units='ns')
+
+    send_payload, data = jigsaw_mmio_packet_gen(0, 0, 8)
+    # recv_payload = jigsaw_mmio_emu(8, 64)
+
+    print("send_payload: ", send_payload.hex())
+
+    ##### Encryption logic
+
+    # Initialize AES-GCM cipher
+    payload_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
+
+    recv_encryptor = Cipher(
         algorithms.AES(key),
         modes.GCM(iv),
         backend=default_backend()
     ).encryptor()
 
     # Encrypt the plaintext
-    payload_ciphertext = payload_encryptor.update(payload) + payload_encryptor.finalize()
-    flipped_ciphertext = flipped_encryptor.update(flipped) + flipped_encryptor.finalize()
+    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
+    recv_ciphertext = recv_encryptor.update(written_mmio_data) + recv_encryptor.finalize()
     ##########################
 
     send_payload = payload_encryptor.tag + payload_ciphertext
@@ -518,22 +577,15 @@ async def run_test_nic(dut):
     print("Length of transmitted payload: ", len(send_payload))
     print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
 
-    assert flipped_ciphertext == echo_tx_pkt.data[:-16]
-    assert flipped_encryptor.tag == echo_tx_pkt.data[-16:]
+    assert recv_ciphertext == echo_tx_pkt.data[:-16]
+    assert recv_encryptor.tag == echo_tx_pkt.data[-16:]
 
-    tb.log.info("Jigsaw random pkt test: underfull 512 bit packet")
+    tb.log.info("Jigsaw MMIO W/R: 0x8")
 
-    jigsaw_id_width = 4
-    jigsaw_op_width = 4
-    jigsaw_addr_width = 64
-    jigsaw_len_width = 16
-    jigsaw_data_width = 400
-    
-    payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
+    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 8, 8)
 
-    payload = bytearray(payload_bits.tobytes())
-    flipped = bytearray(b ^ 0xFF for b in payload)
-    
+    print("send_payload: ", send_payload.hex())
+
     ##### Encryption logic
 
     # Initialize AES-GCM cipher
@@ -543,15 +595,41 @@ async def run_test_nic(dut):
         backend=default_backend()
     ).encryptor()
 
-    flipped_encryptor = Cipher(
+    # Encrypt the plaintext
+    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
+    ##########################
+
+    send_payload = payload_encryptor.tag + payload_ciphertext
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    # TODO: Weird, probably because if aes-gcm is not reset in time
+    # the queue after gcm doesn't flush if tag is not valid 
+    await Timer(250, units='ns')
+
+    send_payload, data = jigsaw_mmio_packet_gen(0, 8, 8)
+    # recv_payload = jigsaw_mmio_emu(8, 64)
+
+    print("send_payload: ", send_payload.hex())
+
+    ##### Encryption logic
+
+    # Initialize AES-GCM cipher
+    payload_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
+
+    recv_encryptor = Cipher(
         algorithms.AES(key),
         modes.GCM(iv),
         backend=default_backend()
     ).encryptor()
 
     # Encrypt the plaintext
-    payload_ciphertext = payload_encryptor.update(payload) + payload_encryptor.finalize()
-    flipped_ciphertext = flipped_encryptor.update(flipped) + flipped_encryptor.finalize()
+    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
+    recv_ciphertext = recv_encryptor.update(written_mmio_data) + recv_encryptor.finalize()
     ##########################
 
     send_payload = payload_encryptor.tag + payload_ciphertext
@@ -563,100 +641,200 @@ async def run_test_nic(dut):
     print("Length of transmitted payload: ", len(send_payload))
     print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
 
-    assert flipped_ciphertext == echo_tx_pkt.data[:-16]
-    assert flipped_encryptor.tag == echo_tx_pkt.data[-16:]
+    assert recv_ciphertext == echo_tx_pkt.data[:-16]
+    assert recv_encryptor.tag == echo_tx_pkt.data[-16:]
 
-    tb.log.info("Jigsaw random pkt test: varying data sizes but last full")
+    tb.log.info("Jigsaw MMIO W/R: 0x10")
 
-    jigsaw_id_width = 4
-    jigsaw_op_width = 4
-    jigsaw_addr_width = 64
-    jigsaw_len_width = 16
-    data_widths = [424, 936, 1960, 4008, 8104]
-    
-    for jigsaw_data_width in data_widths:
-        payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
+    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 16, 8)
 
-        payload = bytearray(payload_bits.tobytes())
-        flipped = bytearray(b ^ 0xFF for b in payload)
+    print("send_payload: ", send_payload.hex())
 
-        ##### Encryption logic
+    ##### Encryption logic
 
-        # Initialize AES-GCM cipher
-        payload_encryptor = Cipher(
-            algorithms.AES(key),
-            modes.GCM(iv),
-            backend=default_backend()
-        ).encryptor()
+    # Initialize AES-GCM cipher
+    payload_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
 
-        flipped_encryptor = Cipher(
-            algorithms.AES(key),
-            modes.GCM(iv),
-            backend=default_backend()
-        ).encryptor()
+    # Encrypt the plaintext
+    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
+    ##########################
 
-        # Encrypt the plaintext
-        payload_ciphertext = payload_encryptor.update(payload) + payload_encryptor.finalize()
-        flipped_ciphertext = flipped_encryptor.update(flipped) + flipped_encryptor.finalize()
-        ##########################
+    send_payload = payload_encryptor.tag + payload_ciphertext
 
-        send_payload = payload_encryptor.tag + payload_ciphertext
+    await tb.port_mac[0].rx.send(send_payload)
 
-        await tb.port_mac[0].rx.send(send_payload)
+    # TODO: Weird, probably because if aes-gcm is not reset in time
+    # the queue after gcm doesn't flush if tag is not valid 
+    await Timer(250, units='ns')
 
-        echo_tx_pkt = await tb.port_mac[0].tx.recv()
+    send_payload, data = jigsaw_mmio_packet_gen(0, 16, 8)
+    # recv_payload = jigsaw_mmio_emu(8, 64)
 
-        print("Length of transmitted payload: ", len(send_payload))
-        print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
+    print("send_payload: ", send_payload.hex())
 
-        assert flipped_ciphertext == echo_tx_pkt.data[:-16]
-        assert flipped_encryptor.tag == echo_tx_pkt.data[-16:]
-    
-    tb.log.info("Jigsaw random pkt test: varying data sizes but last underfull")
+    ##### Encryption logic
 
-    jigsaw_id_width = 4
-    jigsaw_op_width = 4
-    jigsaw_addr_width = 64
-    jigsaw_len_width = 16
-    data_widths = [512, 1024, 2048, 4096, 8192]
-    
-    for jigsaw_data_width in data_widths:
-        payload_bits, rev_payload_header_bits, rev_payload_data_bits = jigsaw_pkt_generator(jigsaw_id_width, jigsaw_op_width, jigsaw_addr_width, jigsaw_len_width, jigsaw_data_width)
+    # Initialize AES-GCM cipher
+    payload_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
 
-        payload = bytearray(payload_bits.tobytes())
-        flipped = bytearray(b ^ 0xFF for b in payload)
+    recv_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
 
-        ##### Encryption logic
+    # Encrypt the plaintext
+    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
+    recv_ciphertext = recv_encryptor.update(written_mmio_data) + recv_encryptor.finalize()
+    ##########################
 
-        # Initialize AES-GCM cipher
-        payload_encryptor = Cipher(
-            algorithms.AES(key),
-            modes.GCM(iv),
-            backend=default_backend()
-        ).encryptor()
+    send_payload = payload_encryptor.tag + payload_ciphertext
 
-        flipped_encryptor = Cipher(
-            algorithms.AES(key),
-            modes.GCM(iv),
-            backend=default_backend()
-        ).encryptor()
+    await tb.port_mac[0].rx.send(send_payload)
 
-        # Encrypt the plaintext
-        payload_ciphertext = payload_encryptor.update(payload) + payload_encryptor.finalize()
-        flipped_ciphertext = flipped_encryptor.update(flipped) + flipped_encryptor.finalize()
-        ##########################
+    echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-        send_payload = payload_encryptor.tag + payload_ciphertext
+    print("Length of transmitted payload: ", len(send_payload))
+    print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
 
-        await tb.port_mac[0].rx.send(send_payload)
+    assert recv_ciphertext == echo_tx_pkt.data[:-16]
+    assert recv_encryptor.tag == echo_tx_pkt.data[-16:]
 
-        echo_tx_pkt = await tb.port_mac[0].tx.recv()
+    tb.log.info("Jigsaw MMIO W/R: 0x18")
 
-        print("Length of transmitted payload: ", len(send_payload))
-        print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
+    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 24, 8)
 
-        assert flipped_ciphertext == echo_tx_pkt.data[:-16]
-        assert flipped_encryptor.tag == echo_tx_pkt.data[-16:]
+    print("send_payload: ", send_payload.hex())
+
+    ##### Encryption logic
+
+    # Initialize AES-GCM cipher
+    payload_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
+
+    # Encrypt the plaintext
+    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
+    ##########################
+
+    send_payload = payload_encryptor.tag + payload_ciphertext
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    # TODO: Weird, probably because if aes-gcm is not reset in time
+    # the queue after gcm doesn't flush if tag is not valid 
+    await Timer(250, units='ns')
+
+    send_payload, data = jigsaw_mmio_packet_gen(0, 24, 8)
+    # recv_payload = jigsaw_mmio_emu(8, 64)
+
+    print("send_payload: ", send_payload.hex())
+
+    ##### Encryption logic
+
+    # Initialize AES-GCM cipher
+    payload_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
+
+    recv_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
+
+    # Encrypt the plaintext
+    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
+    recv_ciphertext = recv_encryptor.update(written_mmio_data) + recv_encryptor.finalize()
+    ##########################
+
+    send_payload = payload_encryptor.tag + payload_ciphertext
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+    print("Length of transmitted payload: ", len(send_payload))
+    print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
+
+    assert recv_ciphertext == echo_tx_pkt.data[:-16]
+    assert recv_encryptor.tag == echo_tx_pkt.data[-16:]
+
+    tb.log.info("Jigsaw MMIO W/R: 0x20")
+
+    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 32, 8)
+
+    print("send_payload: ", send_payload.hex())
+
+    ##### Encryption logic
+
+    # Initialize AES-GCM cipher
+    payload_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
+
+    # Encrypt the plaintext
+    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
+    ##########################
+
+    send_payload = payload_encryptor.tag + payload_ciphertext
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    # TODO: Weird, probably because if aes-gcm is not reset in time
+    # the queue after gcm doesn't flush if tag is not valid 
+    await Timer(250, units='ns')
+
+    send_payload, data = jigsaw_mmio_packet_gen(0, 32, 8)
+    # recv_payload = jigsaw_mmio_emu(8, 64)
+
+    print("send_payload: ", send_payload.hex())
+
+    ##### Encryption logic
+
+    # Initialize AES-GCM cipher
+    payload_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
+
+    recv_encryptor = Cipher(
+        algorithms.AES(key),
+        modes.GCM(iv),
+        backend=default_backend()
+    ).encryptor()
+
+    # Encrypt the plaintext
+    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
+    recv_ciphertext = recv_encryptor.update(written_mmio_data) + recv_encryptor.finalize()
+    ##########################
+
+    send_payload = payload_encryptor.tag + payload_ciphertext
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+    print("Length of transmitted payload: ", len(send_payload))
+    print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
+
+    assert recv_ciphertext == echo_tx_pkt.data[:-16]
+    assert recv_encryptor.tag == echo_tx_pkt.data[-16:]
 
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)

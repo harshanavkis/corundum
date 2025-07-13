@@ -282,6 +282,20 @@ module jigsaw_pkt_processor #(
         .aes_out_tuser(encrypt_out_tuser)
     );
 
+    wire [AXI_DATA_WIDTH-1:0] type_info_tdata;
+    wire [KEEP_WIDTH-1:0] type_info_tkeep;
+    wire type_info_tvalid;
+    wire type_info_tready;
+    wire type_info_tlast;
+    wire type_info_tuser;
+
+    wire [AXI_DATA_WIDTH-1:0] gather_to_send_tdata;
+    wire [KEEP_WIDTH-1:0] gather_to_send_tkeep;
+    wire gather_to_send_tvalid;
+    wire gather_to_send_tready;
+    wire gather_to_send_tlast;
+    wire gather_to_send_tuser;
+
     axis_adapter #(
         .S_DATA_WIDTH(128),
         .S_KEEP_ENABLE(1),
@@ -308,15 +322,22 @@ module jigsaw_pkt_processor #(
         .s_axis_tuser(1'h0),
         
         // 512-bit output
-        .m_axis_tdata(m_axis_sync_tx_tdata),
-        .m_axis_tkeep(m_axis_sync_tx_tkeep),
-        .m_axis_tvalid(m_axis_sync_tx_tvalid),
-        .m_axis_tready(m_axis_sync_tx_tready),
-        .m_axis_tlast(m_axis_sync_tx_tlast),
+        .m_axis_tdata(gather_to_send_tdata),
+        .m_axis_tkeep(gather_to_send_tkeep),
+        .m_axis_tvalid(gather_to_send_tvalid),
+        .m_axis_tready(gather_to_send_tready),
+        .m_axis_tlast(gather_to_send_tlast),
         .m_axis_tid(),
         .m_axis_tdest(),
-        .m_axis_tuser(m_axis_sync_tx_tuser)
+        .m_axis_tuser(gather_to_send_tuser)
     );
+
+    assign m_axis_sync_tx_tdata = gather_to_send_tdata;
+    assign m_axis_sync_tx_tkeep = gather_to_send_tkeep;
+    assign m_axis_sync_tx_tvalid = gather_to_send_tvalid;
+    assign gather_to_send_tready = m_axis_sync_tx_tready;
+    assign m_axis_sync_tx_tlast = gather_to_send_tlast;
+    assign m_axis_sync_tx_tuser = gather_to_send_tuser;
 
 
 endmodule
