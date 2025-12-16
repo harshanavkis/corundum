@@ -93,6 +93,7 @@ module txn_generator #(
     assign txn_generator_in_tready = mmio_req_ready;
     assign txn_generator_out_tlast = mmio_rsp_last;
     assign mmio_rsp_ready = txn_generator_out_tready;
+    assign txn_generator_out_tuser = 1'b0;
 
     abstract_dma dma_device (
         .clk(clk),

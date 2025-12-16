@@ -512,73 +512,24 @@ async def run_test_nic(dut):
 
     tb.log.info("Init complete")
 
-    # AES-256 key and 12-byte IV (all zero)
-    key = bytes(32)
-    iv = bytes(12)
-
     tb.log.info("Jigsaw MMIO W/R: 0x0")
 
     send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 0, 8)
 
     print("send_payload: ", send_payload.hex())
 
-    ##### Encryption logic
-
-    # Initialize AES-GCM cipher
-    payload_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    # Encrypt the plaintext
-    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
-    ##########################
-
-    send_payload = payload_encryptor.tag + payload_ciphertext
-
     await tb.port_mac[0].rx.send(send_payload)
-
-    # TODO: Weird, probably because if aes-gcm is not reset in time
-    # the queue after gcm doesn't flush if tag is not valid 
-    await Timer(250, units='ns')
 
     send_payload, data = jigsaw_mmio_packet_gen(0, 0, 8)
     # recv_payload = jigsaw_mmio_emu(8, 64)
 
     print("send_payload: ", send_payload.hex())
 
-    ##### Encryption logic
-
-    # Initialize AES-GCM cipher
-    payload_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    recv_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    # Encrypt the plaintext
-    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
-    recv_ciphertext = recv_encryptor.update(written_mmio_data) + recv_encryptor.finalize()
-    ##########################
-
-    send_payload = payload_encryptor.tag + payload_ciphertext
-
     await tb.port_mac[0].rx.send(send_payload)
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    print("Length of transmitted payload: ", len(send_payload))
-    print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
-
-    assert recv_ciphertext == echo_tx_pkt.data[:-16]
-    assert recv_encryptor.tag == echo_tx_pkt.data[-16:]
+    assert written_mmio_data == echo_tx_pkt.data
 
     tb.log.info("Jigsaw MMIO W/R: 0x8")
 
@@ -586,63 +537,18 @@ async def run_test_nic(dut):
 
     print("send_payload: ", send_payload.hex())
 
-    ##### Encryption logic
-
-    # Initialize AES-GCM cipher
-    payload_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    # Encrypt the plaintext
-    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
-    ##########################
-
-    send_payload = payload_encryptor.tag + payload_ciphertext
-
     await tb.port_mac[0].rx.send(send_payload)
-
-    # TODO: Weird, probably because if aes-gcm is not reset in time
-    # the queue after gcm doesn't flush if tag is not valid 
-    await Timer(250, units='ns')
 
     send_payload, data = jigsaw_mmio_packet_gen(0, 8, 8)
     # recv_payload = jigsaw_mmio_emu(8, 64)
 
     print("send_payload: ", send_payload.hex())
 
-    ##### Encryption logic
-
-    # Initialize AES-GCM cipher
-    payload_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    recv_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    # Encrypt the plaintext
-    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
-    recv_ciphertext = recv_encryptor.update(written_mmio_data) + recv_encryptor.finalize()
-    ##########################
-
-    send_payload = payload_encryptor.tag + payload_ciphertext
-
     await tb.port_mac[0].rx.send(send_payload)
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    print("Length of transmitted payload: ", len(send_payload))
-    print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
-
-    assert recv_ciphertext == echo_tx_pkt.data[:-16]
-    assert recv_encryptor.tag == echo_tx_pkt.data[-16:]
+    assert written_mmio_data == echo_tx_pkt.data
 
     tb.log.info("Jigsaw MMIO W/R: 0x10")
 
@@ -650,63 +556,18 @@ async def run_test_nic(dut):
 
     print("send_payload: ", send_payload.hex())
 
-    ##### Encryption logic
-
-    # Initialize AES-GCM cipher
-    payload_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    # Encrypt the plaintext
-    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
-    ##########################
-
-    send_payload = payload_encryptor.tag + payload_ciphertext
-
     await tb.port_mac[0].rx.send(send_payload)
-
-    # TODO: Weird, probably because if aes-gcm is not reset in time
-    # the queue after gcm doesn't flush if tag is not valid 
-    await Timer(250, units='ns')
 
     send_payload, data = jigsaw_mmio_packet_gen(0, 16, 8)
     # recv_payload = jigsaw_mmio_emu(8, 64)
 
     print("send_payload: ", send_payload.hex())
 
-    ##### Encryption logic
-
-    # Initialize AES-GCM cipher
-    payload_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    recv_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    # Encrypt the plaintext
-    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
-    recv_ciphertext = recv_encryptor.update(written_mmio_data) + recv_encryptor.finalize()
-    ##########################
-
-    send_payload = payload_encryptor.tag + payload_ciphertext
-
     await tb.port_mac[0].rx.send(send_payload)
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    print("Length of transmitted payload: ", len(send_payload))
-    print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
-
-    assert recv_ciphertext == echo_tx_pkt.data[:-16]
-    assert recv_encryptor.tag == echo_tx_pkt.data[-16:]
+    assert written_mmio_data == echo_tx_pkt.data
 
     tb.log.info("Jigsaw MMIO W/R: 0x18")
 
@@ -714,63 +575,18 @@ async def run_test_nic(dut):
 
     print("send_payload: ", send_payload.hex())
 
-    ##### Encryption logic
-
-    # Initialize AES-GCM cipher
-    payload_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    # Encrypt the plaintext
-    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
-    ##########################
-
-    send_payload = payload_encryptor.tag + payload_ciphertext
-
     await tb.port_mac[0].rx.send(send_payload)
-
-    # TODO: Weird, probably because if aes-gcm is not reset in time
-    # the queue after gcm doesn't flush if tag is not valid 
-    await Timer(250, units='ns')
 
     send_payload, data = jigsaw_mmio_packet_gen(0, 24, 8)
     # recv_payload = jigsaw_mmio_emu(8, 64)
 
     print("send_payload: ", send_payload.hex())
 
-    ##### Encryption logic
-
-    # Initialize AES-GCM cipher
-    payload_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    recv_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    # Encrypt the plaintext
-    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
-    recv_ciphertext = recv_encryptor.update(written_mmio_data) + recv_encryptor.finalize()
-    ##########################
-
-    send_payload = payload_encryptor.tag + payload_ciphertext
-
     await tb.port_mac[0].rx.send(send_payload)
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    print("Length of transmitted payload: ", len(send_payload))
-    print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
-
-    assert recv_ciphertext == echo_tx_pkt.data[:-16]
-    assert recv_encryptor.tag == echo_tx_pkt.data[-16:]
+    assert written_mmio_data == echo_tx_pkt.data
 
     tb.log.info("Jigsaw MMIO W/R: 0x20")
 
@@ -778,63 +594,18 @@ async def run_test_nic(dut):
 
     print("send_payload: ", send_payload.hex())
 
-    ##### Encryption logic
-
-    # Initialize AES-GCM cipher
-    payload_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    # Encrypt the plaintext
-    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
-    ##########################
-
-    send_payload = payload_encryptor.tag + payload_ciphertext
-
     await tb.port_mac[0].rx.send(send_payload)
-
-    # TODO: Weird, probably because if aes-gcm is not reset in time
-    # the queue after gcm doesn't flush if tag is not valid 
-    await Timer(250, units='ns')
 
     send_payload, data = jigsaw_mmio_packet_gen(0, 32, 8)
     # recv_payload = jigsaw_mmio_emu(8, 64)
 
     print("send_payload: ", send_payload.hex())
 
-    ##### Encryption logic
-
-    # Initialize AES-GCM cipher
-    payload_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    recv_encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-
-    # Encrypt the plaintext
-    payload_ciphertext = payload_encryptor.update(send_payload) + payload_encryptor.finalize()
-    recv_ciphertext = recv_encryptor.update(written_mmio_data) + recv_encryptor.finalize()
-    ##########################
-
-    send_payload = payload_encryptor.tag + payload_ciphertext
-
     await tb.port_mac[0].rx.send(send_payload)
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    print("Length of transmitted payload: ", len(send_payload))
-    print("Length of received AES-GCM payload: ", len(echo_tx_pkt.data))
-
-    assert recv_ciphertext == echo_tx_pkt.data[:-16]
-    assert recv_encryptor.tag == echo_tx_pkt.data[-16:]
+    assert written_mmio_data == echo_tx_pkt.data
 
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
