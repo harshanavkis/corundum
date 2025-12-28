@@ -525,6 +525,8 @@ async def run_test_nic(dut):
 
     print("send_payload: ", send_payload.hex())
 
+    await Timer(1000, units='ns')
+
     await tb.port_mac[0].rx.send(send_payload)
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
@@ -597,6 +599,44 @@ async def run_test_nic(dut):
     await tb.port_mac[0].rx.send(send_payload)
 
     send_payload, data = jigsaw_mmio_packet_gen(0, 32, 8)
+    # recv_payload = jigsaw_mmio_emu(8, 64)
+
+    print("send_payload: ", send_payload.hex())
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+    assert written_mmio_data == echo_tx_pkt.data
+
+    tb.log.info("Jigsaw MMIO W/R: 0x28")
+
+    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 40, 8)
+
+    print("send_payload: ", send_payload.hex())
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    send_payload, data = jigsaw_mmio_packet_gen(0, 40, 8)
+    # recv_payload = jigsaw_mmio_emu(8, 64)
+
+    print("send_payload: ", send_payload.hex())
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+    assert written_mmio_data == echo_tx_pkt.data
+
+    tb.log.info("Jigsaw MMIO W/R: 0x30")
+
+    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 48, 8)
+
+    print("send_payload: ", send_payload.hex())
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    send_payload, data = jigsaw_mmio_packet_gen(0, 48, 8)
     # recv_payload = jigsaw_mmio_emu(8, 64)
 
     print("send_payload: ", send_payload.hex())
