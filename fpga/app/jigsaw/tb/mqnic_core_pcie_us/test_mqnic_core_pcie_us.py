@@ -512,27 +512,55 @@ async def run_test_nic(dut):
 
     tb.log.info("Init complete")
 
-    tb.log.info("Jigsaw MMIO W/R: 0x0")
-
-    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 0, 8, 3)
-
+    tb.log.info("Jigsaw H2D DMA")
+    # Write DMA address and length information
+    send_payload, mmio_data = jigsaw_mmio_packet_gen(1, 8, 8, 2000) # src_addr for H2D DMA
     print("send_payload: ", send_payload.hex())
+    print("mmio_data: ", mmio_data.hex())
 
     await tb.port_mac[0].rx.send(send_payload)
 
-    send_payload, data = jigsaw_mmio_packet_gen(0, 0, 8, 0)
-
-    print("send_payload: ", send_payload.hex())
-
-    await Timer(1000, units='ns') # Why does it take so long?
+    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 0, 8, 1)
 
     await tb.port_mac[0].rx.send(send_payload)
+
+    expected_op = 0
+    expected_addr = 2000
+    expected_len = 0
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    assert written_mmio_data != echo_tx_pkt.data[1:]
-    print("written_mmio_data: ", written_mmio_data.hex())
     print("echo_tx_pkt.data: ", echo_tx_pkt.data.hex())
+
+    assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
+    assert echo_tx_pkt.data[1:9] == expected_addr.to_bytes(8, 'little')
+    assert echo_tx_pkt.data[9:17] == expected_len.to_bytes(8, 'little')
+
+    await Timer(250, units='ns')
+
+    tb.log.info("Jigsaw D2H DMA")
+
+    send_payload, mmio_data = jigsaw_mmio_packet_gen(1, 16, 8, 3000) # dst_addr for D2H DMA
+    print("send_payload: ", send_payload.hex())
+    print("mmio_data: ", mmio_data.hex())
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 0, 8, 3)
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    expected_op = 1
+    expected_addr = 3000
+    expected_len = 0
+
+    echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+    print("echo_tx_pkt.data: ", echo_tx_pkt.data.hex())
+
+    assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
+    assert echo_tx_pkt.data[1:9] == expected_addr.to_bytes(8, 'little')
+    assert echo_tx_pkt.data[9:17] == expected_len.to_bytes(8, 'little')
 
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
