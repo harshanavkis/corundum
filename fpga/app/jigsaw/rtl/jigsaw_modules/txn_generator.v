@@ -75,23 +75,79 @@ module txn_generator #(
     wire [71:0] mmio_read_data;
     wire mmio_read_valid;
 
+    wire dma_start;
+    wire dma_direction;
+    wire [63:0] dma_src_addr;
+    wire [63:0] dma_dst_addr;
+    wire [63:0] dma_len;
+    wire dma_status;
+    wire dma_status_valid;
+
+    wire payload_mmio_valid;
+    assign payload_mmio_valid = txn_generator_in_tvalid && ((dev_op == 8'd0) || (dev_op == 8'd1));
+    wire clear_dma_start;
+
+    wire [AXI_DATA_WIDTH-1:0] payload_to_dma_out_tdata;
+    wire [KEEP_WIDTH-1:0] payload_to_dma_out_tkeep;
+    wire payload_to_dma_out_tvalid;
+    wire payload_to_dma_out_tready;
+    wire payload_to_dma_out_tlast;
+    wire payload_to_dma_out_tuser;
+
     payload_to_mmio payload_to_mmio (
         .clk(clk),
         .rst(rst),
         .op_code(dev_op),
         .address(dev_addr),
         .payload_data(dev_mmio_data),
-        .payload_valid(txn_generator_in_tvalid), // TODO: And this with opcode is read or write
+        .payload_valid(payload_mmio_valid),
         .payload_ready(txn_generator_in_tready),
         .read_data(mmio_read_data),
         .read_data_valid(mmio_read_valid),
-        .read_data_ready(txn_generator_out_tready)
+        .read_data_ready(txn_generator_out_tready & ~payload_to_dma_out_tvalid),  // Gate with DMA inactive
+        .dma_start(dma_start),
+        .dma_direction(dma_direction),
+        .dma_src_addr(dma_src_addr),
+        .dma_dst_addr(dma_dst_addr),
+        .dma_len(dma_len),
+        .dma_status(dma_status),
+        .dma_status_valid(dma_status_valid),
+        .computation_status(0),
+        .computation_status_valid(1'b0),
+        .clear_dma_start(clear_dma_start)
     );
 
-    assign txn_generator_out_tdata = mmio_read_data;
-    assign txn_generator_out_tkeep = 9'h1FF;
-    assign txn_generator_out_tvalid = mmio_read_valid;
-    assign txn_generator_out_tlast = mmio_read_valid;
-    assign txn_generator_out_tuser = 1'b0;
+    payload_to_dma payload_to_dma (
+        .clk(clk),
+        .rst(rst),
+        .dma_start(dma_start),
+        .dma_direction(dma_direction),
+        .dma_src_addr(dma_src_addr),
+        .dma_dst_addr(dma_dst_addr),
+        .dma_len(dma_len),
+        .dma_status(dma_status),
+        .dma_status_valid(dma_status_valid),
+        .clear_dma_start(clear_dma_start),
+        .payload_to_dma_in_tdata(),
+        .payload_to_dma_in_tkeep(),
+        .payload_to_dma_in_tvalid(),
+        .payload_to_dma_in_tready(),
+        .payload_to_dma_in_tlast(),
+        .payload_to_dma_in_tuser(),
+        .payload_to_dma_out_tdata(payload_to_dma_out_tdata),
+        .payload_to_dma_out_tkeep(payload_to_dma_out_tkeep),
+        .payload_to_dma_out_tvalid(payload_to_dma_out_tvalid),
+        .payload_to_dma_out_tready(payload_to_dma_out_tready),
+        .payload_to_dma_out_tlast(payload_to_dma_out_tlast),
+        .payload_to_dma_out_tuser(payload_to_dma_out_tuser)
+    );
+
+    assign txn_generator_out_tdata = mmio_read_valid ? {{(AXI_DATA_WIDTH-72){1'b0}}, mmio_read_data} : payload_to_dma_out_tdata;
+    assign txn_generator_out_tkeep = mmio_read_valid ? {{(KEEP_WIDTH-9){1'b0}}, 9'hFF} : payload_to_dma_out_tkeep;
+    assign txn_generator_out_tvalid = mmio_read_valid | payload_to_dma_out_tvalid;
+    assign txn_generator_out_tlast = mmio_read_valid ? 1'b1 : payload_to_dma_out_tlast;
+    assign txn_generator_out_tuser = mmio_read_valid ? 1'b0 : payload_to_dma_out_tuser;
+
+    assign payload_to_dma_out_tready = txn_generator_out_tready & ~mmio_read_valid;
 
 endmodule

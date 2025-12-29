@@ -10,7 +10,7 @@ module payload_to_mmio (
     output reg read_data_valid,
     input wire read_data_ready,
     output reg dma_start,
-    output reg [1:0] dma_direction,
+    output reg dma_direction,
     output reg [63:0] dma_src_addr,
     output reg [63:0] dma_dst_addr,
     output reg [63:0] dma_len,
@@ -26,8 +26,8 @@ localparam NUM_REGS = 7;
 
 // Register map:
 //  0 (RW) - DMA command register is bitwise OR of the following:
-//    0x01 - Start transfer
-//    0x02 - Direction (0 = H2D, 1 = D2H)
+//    bit 0 - Start transfer
+//    bit 1 - Direction (0 = H2D, 1 = D2H)
 localparam DMA_CMD_REG = 0;
 //  1 (RW) - DMA source address
 localparam DMA_SRC_ADDR_REG = 1;
@@ -53,7 +53,7 @@ reg read_data_pending_valid;
 assign payload_ready = 1'b1;
 
 assign dma_start = slv_reg[DMA_CMD_REG][0];
-assign dma_direction = slv_reg[DMA_CMD_REG][2:1];
+assign dma_direction = slv_reg[DMA_CMD_REG][1];
 assign dma_src_addr = slv_reg[DMA_SRC_ADDR_REG];
 assign dma_dst_addr = slv_reg[DMA_DST_ADDR_REG];
 assign dma_len = slv_reg[DMA_LEN_REG];
@@ -81,6 +81,11 @@ always @(posedge clk) begin
         // Latch computation status when valid
         if (computation_status_valid) begin
             slv_reg[DMA_STATUS_REG][1] <= computation_status;
+        end
+
+        // Clear command register when clear_dma_start is asserted
+        if (clear_dma_start) begin
+            slv_reg[DMA_CMD_REG] <= 64'b0;
         end
 
         // Handle read data output with ready/valid handshaking
