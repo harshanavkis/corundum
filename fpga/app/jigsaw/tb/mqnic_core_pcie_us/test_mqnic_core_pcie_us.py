@@ -531,7 +531,7 @@ async def run_test_nic(dut):
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    assert written_mmio_data == echo_tx_pkt.data
+    assert written_mmio_data == echo_tx_pkt.data[1:]
 
     tb.log.info("Jigsaw MMIO W/R: 0x8")
 
@@ -550,7 +550,7 @@ async def run_test_nic(dut):
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    assert written_mmio_data == echo_tx_pkt.data
+    assert written_mmio_data == echo_tx_pkt.data[1:]
 
     tb.log.info("Jigsaw MMIO W/R: 0x10")
 
@@ -569,7 +569,7 @@ async def run_test_nic(dut):
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    assert written_mmio_data == echo_tx_pkt.data
+    assert written_mmio_data == echo_tx_pkt.data[1:]
 
     tb.log.info("Jigsaw MMIO W/R: 0x18")
 
@@ -588,7 +588,7 @@ async def run_test_nic(dut):
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    assert written_mmio_data == echo_tx_pkt.data
+    assert written_mmio_data == echo_tx_pkt.data[1:]
 
     # tb.log.info("Jigsaw MMIO W/R: 0x20")
 

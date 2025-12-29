@@ -72,7 +72,7 @@ module txn_generator #(
     assign dev_len = txn_generator_in_tdata[LEN_POS +: LEN_WIDTH];
     assign dev_mmio_data = txn_generator_in_tdata[DATA_POS+: 64];
 
-    wire [63:0] mmio_read_data;
+    wire [71:0] mmio_read_data;
     wire mmio_read_valid;
 
     payload_to_mmio payload_to_mmio (
@@ -89,7 +89,7 @@ module txn_generator #(
     );
 
     assign txn_generator_out_tdata = mmio_read_data;
-    assign txn_generator_out_tkeep = 8'hFF;
+    assign txn_generator_out_tkeep = 9'h1FF;
     assign txn_generator_out_tvalid = mmio_read_valid;
     assign txn_generator_out_tlast = mmio_read_valid;
     assign txn_generator_out_tuser = 1'b0;

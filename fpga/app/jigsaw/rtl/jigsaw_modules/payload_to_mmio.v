@@ -6,7 +6,7 @@ module payload_to_mmio (
     input wire [63:0] payload_data,
     input wire payload_valid,
     output wire payload_ready,
-    output reg [63:0] read_data,
+    output reg [71:0] read_data,
     output reg read_data_valid,
     input wire read_data_ready,
     output reg dma_start,
@@ -100,28 +100,28 @@ always @(posedge clk) begin
             end else if (payload_valid && payload_ready && op_code == 8'h0) begin
                 // New read operation - output directly
                 case (address)
-                    64'h0:  read_data <= slv_reg[DMA_CMD_REG];
-                    64'h8:  read_data <= slv_reg[DMA_SRC_ADDR_REG];
-                    64'h10: read_data <= slv_reg[DMA_DST_ADDR_REG];
-                    64'h18: read_data <= slv_reg[DMA_LEN_REG];
-                    64'h20: read_data <= slv_reg[DMA_STATUS_REG];
-                    64'h28: read_data <= slv_reg[START_COMPUTATION_REG];
-                    64'h30: read_data <= slv_reg[CYCLES_PER_COMPUTATION_REG];
-                    default: read_data <= 64'b0;
+                    64'h0:  read_data <= {slv_reg[DMA_CMD_REG], {8'd2}};
+                    64'h8:  read_data <= {slv_reg[DMA_SRC_ADDR_REG], {8'd2}};
+                    64'h10: read_data <= {slv_reg[DMA_DST_ADDR_REG], {8'd2}};
+                    64'h18: read_data <= {slv_reg[DMA_LEN_REG], {8'd2}};
+                    64'h20: read_data <= {slv_reg[DMA_STATUS_REG], {8'd2}};
+                    64'h28: read_data <= {slv_reg[START_COMPUTATION_REG], {8'd2}};
+                    64'h30: read_data <= {slv_reg[CYCLES_PER_COMPUTATION_REG], {8'd2}};
+                    default: read_data <= 72'b0;
                 endcase
                 read_data_valid <= 1'b1;
             end
         end else if (payload_valid && payload_ready && op_code == 8'h0) begin
             // Output path is blocked, store to pending
             case (address)
-                64'h0:  read_data_pending <= slv_reg[DMA_CMD_REG];
-                64'h8:  read_data_pending <= slv_reg[DMA_SRC_ADDR_REG];
-                64'h10: read_data_pending <= slv_reg[DMA_DST_ADDR_REG];
-                64'h18: read_data_pending <= slv_reg[DMA_LEN_REG];
-                64'h20: read_data_pending <= slv_reg[DMA_STATUS_REG];
-                64'h28: read_data_pending <= slv_reg[START_COMPUTATION_REG];
-                64'h30: read_data_pending <= slv_reg[CYCLES_PER_COMPUTATION_REG];
-                default: read_data_pending <= 64'b0;
+                64'h0:  read_data_pending <= {slv_reg[DMA_CMD_REG], {8'd2}};
+                64'h8:  read_data_pending <= {slv_reg[DMA_SRC_ADDR_REG], {8'd2}};
+                64'h10: read_data_pending <= {slv_reg[DMA_DST_ADDR_REG], {8'd2}};
+                64'h18: read_data_pending <= {slv_reg[DMA_LEN_REG], {8'd2}};
+                64'h20: read_data_pending <= {slv_reg[DMA_STATUS_REG], {8'd2}};
+                64'h28: read_data_pending <= {slv_reg[START_COMPUTATION_REG], {8'd2}};
+                64'h30: read_data_pending <= {slv_reg[CYCLES_PER_COMPUTATION_REG], {8'd2}};
+                default: read_data_pending <= 72'b0;
             endcase
             read_data_pending_valid <= 1'b1;
         end
