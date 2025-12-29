@@ -58,8 +58,6 @@ assign dma_src_addr = slv_reg[DMA_SRC_ADDR_REG];
 assign dma_dst_addr = slv_reg[DMA_DST_ADDR_REG];
 assign dma_len = slv_reg[DMA_LEN_REG];
 
-// assign slv_reg[DMA_STATUS_REG] = {62'b0, computation_status, dma_status};
-
 always @(posedge clk) begin
     if (rst) begin
         // Reset all registers
@@ -75,6 +73,16 @@ always @(posedge clk) begin
         read_data_pending <= 64'b0;
         read_data_pending_valid <= 1'b0;
     end else begin
+        // Latch DMA status when valid
+        if (dma_status_valid) begin
+            slv_reg[DMA_STATUS_REG][0] <= dma_status;
+        end
+        
+        // Latch computation status when valid
+        if (computation_status_valid) begin
+            slv_reg[DMA_STATUS_REG][1] <= computation_status;
+        end
+
         // Handle read data output with ready/valid handshaking
         if (read_data_valid && read_data_ready) begin
             // Data accepted by downstream, clear valid
