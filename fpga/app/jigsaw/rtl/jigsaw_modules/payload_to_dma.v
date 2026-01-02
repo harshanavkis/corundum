@@ -44,6 +44,7 @@ module payload_to_dma #(
     reg [2:0] state;
     reg [2:0] next_state;
     reg [7:0] h2d;
+    reg [63:0] dma_d2h_count;
 
     always @(posedge clk)
     begin
@@ -60,11 +61,23 @@ module payload_to_dma #(
             IDLE: 
                 if (dma_start)
                     next_state = CLEAR_DMA_REG;
+                else
+                    next_state = IDLE;
             CLEAR_DMA_REG:
-                if (payload_to_dma_out_tready)
-                    next_state = SEND_HEADER;
+                next_state = SEND_HEADER;
             SEND_HEADER:
-                next_state = IDLE;
+                if (payload_to_dma_out_tready) begin
+                    if (h2d)
+                        next_state = SEND_PAYLOAD;
+                    else
+                        next_state = IDLE;
+                end else
+                    next_state = SEND_HEADER;
+            SEND_PAYLOAD:
+                if (payload_to_dma_out_tready && (dma_d2h_count + KEEP_WIDTH >= dma_len))
+                    next_state = IDLE;
+                else
+                    next_state = SEND_PAYLOAD;
             default: 
                 next_state = IDLE;
         endcase
@@ -73,8 +86,12 @@ module payload_to_dma #(
     always @(posedge clk) begin
         if (rst) begin
             h2d <= 8'b0;
+            dma_d2h_count <= 64'b0;
         end else if (state == CLEAR_DMA_REG) begin
             h2d <= dma_direction;
+            dma_d2h_count <= 64'b0;
+        end else if (state == SEND_PAYLOAD && payload_to_dma_out_tready) begin
+            dma_d2h_count <= dma_d2h_count + KEEP_WIDTH;
         end
     end
 
@@ -97,19 +114,34 @@ module payload_to_dma #(
                 
             CLEAR_DMA_REG: begin
                 clear_dma_start = 1'b1;
-                // Store direction for later use since it is not available in the next state
+                dma_status_valid = 1'b1;
+                dma_status = 1'b0;
             end
 
             SEND_HEADER: begin
-                if (h2d) // TODO: right now when h2d is 1, it is a d2h actually
+                if (h2d) begin // TODO: right now when h2d is 1, it is a d2h actually
                     payload_to_dma_out_tdata = {dma_len, dma_dst_addr, h2d};
-                else
+                    payload_to_dma_out_tlast = 1'b1;
+                end else begin
                     payload_to_dma_out_tdata = {dma_len, dma_src_addr, h2d};
+                    payload_to_dma_out_tlast = 1'b1;
+                end
                 payload_to_dma_out_tkeep = {{(KEEP_WIDTH - 17){1'b0}}, {17{1'b1}}};
                 payload_to_dma_out_tvalid = 1'b1;
-                payload_to_dma_out_tlast = 1'b1;
             end
-                
+
+            SEND_PAYLOAD: begin
+                // TODO: for D2H we should maybe send tlast after SEND_HEADER and SEND_PAYLOAD, instead of sending for each
+                // TODO: Check if we need to use payload_to_dma_out_tready while triggering payload_to_dma_out_tvalid
+                payload_to_dma_out_tdata = {AXI_DATA_WIDTH{1'b0}};
+                payload_to_dma_out_tkeep = {KEEP_WIDTH{1'b1}};
+                payload_to_dma_out_tvalid = 1'b1;
+                payload_to_dma_out_tlast = (dma_d2h_count + KEEP_WIDTH >= dma_len);
+
+                // On write completion, set the status of DMA register so that it can be polled by the CPU
+                dma_status_valid = payload_to_dma_out_tlast == 1'b1;
+                dma_status = payload_to_dma_out_tlast == 1'b1;
+            end
             default: begin
                 // Do nothing
             end 

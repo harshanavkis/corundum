@@ -143,7 +143,7 @@ module txn_generator #(
     );
 
     assign txn_generator_out_tdata = mmio_read_valid ? {{(AXI_DATA_WIDTH-72){1'b0}}, mmio_read_data} : payload_to_dma_out_tdata;
-    assign txn_generator_out_tkeep = mmio_read_valid ? {{(KEEP_WIDTH-9){1'b0}}, 9'hFF} : payload_to_dma_out_tkeep;
+    assign txn_generator_out_tkeep = mmio_read_valid ? {{(KEEP_WIDTH-9){1'b0}}, 9'h1FF} : payload_to_dma_out_tkeep;
     assign txn_generator_out_tvalid = mmio_read_valid | payload_to_dma_out_tvalid;
     assign txn_generator_out_tlast = mmio_read_valid ? 1'b1 : payload_to_dma_out_tlast;
     assign txn_generator_out_tuser = mmio_read_valid ? 1'b0 : payload_to_dma_out_tuser;
