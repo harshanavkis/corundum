@@ -70,7 +70,7 @@ module payload_to_dma #(
                     if (h2d)
                         next_state = SEND_PAYLOAD;
                     else
-                        next_state = IDLE;
+                        next_state = RECEIVE_PAYLOAD;
                 end else
                     next_state = SEND_HEADER;
             SEND_PAYLOAD:
@@ -78,6 +78,11 @@ module payload_to_dma #(
                     next_state = IDLE;
                 else
                     next_state = SEND_PAYLOAD;
+            RECEIVE_PAYLOAD:
+                if (payload_to_dma_in_tlast && (dma_d2h_count + KEEP_WIDTH >= dma_len))
+                    next_state = IDLE;
+                else
+                    next_state = RECEIVE_PAYLOAD;
             default: 
                 next_state = IDLE;
         endcase
@@ -91,6 +96,8 @@ module payload_to_dma #(
             h2d <= dma_direction;
             dma_d2h_count <= 64'b0;
         end else if (state == SEND_PAYLOAD && payload_to_dma_out_tready) begin
+            dma_d2h_count <= dma_d2h_count + KEEP_WIDTH;
+        end else if (state == RECEIVE_PAYLOAD && payload_to_dma_in_tvalid) begin
             dma_d2h_count <= dma_d2h_count + KEEP_WIDTH;
         end
     end
@@ -106,6 +113,8 @@ module payload_to_dma #(
        payload_to_dma_out_tvalid = 1'b0;
        payload_to_dma_out_tlast = 1'b0;
        payload_to_dma_out_tuser = 1'b0;
+
+       payload_to_dma_in_tready = 1'b1;
        
        case (state)
             IDLE: begin
@@ -139,8 +148,13 @@ module payload_to_dma #(
                 payload_to_dma_out_tlast = (dma_d2h_count + KEEP_WIDTH >= dma_len);
 
                 // On write completion, set the status of DMA register so that it can be polled by the CPU
-                dma_status_valid = payload_to_dma_out_tlast == 1'b1;
-                dma_status = payload_to_dma_out_tlast == 1'b1;
+                dma_status_valid = (dma_d2h_count + KEEP_WIDTH >= dma_len);
+                dma_status = (dma_d2h_count + KEEP_WIDTH >= dma_len);
+            end
+            RECEIVE_PAYLOAD: begin
+                // On read completion, set the status of DMA register so that it can be polled by the CPU
+                dma_status_valid = payload_to_dma_in_tlast == 1'b1;
+                dma_status = payload_to_dma_in_tlast == 1'b1;
             end
             default: begin
                 // Do nothing

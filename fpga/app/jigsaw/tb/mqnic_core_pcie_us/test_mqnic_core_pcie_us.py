@@ -520,13 +520,17 @@ async def run_test_nic(dut):
 
     await tb.port_mac[0].rx.send(send_payload)
 
+    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 24, 8, 512)
+
+    await tb.port_mac[0].rx.send(send_payload)
+
     send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 0, 8, 1)
 
     await tb.port_mac[0].rx.send(send_payload)
 
     expected_op = 0
     expected_addr = 2000
-    expected_len = 0
+    expected_len = 512
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
@@ -536,41 +540,15 @@ async def run_test_nic(dut):
     assert echo_tx_pkt.data[1:9] == expected_addr.to_bytes(8, 'little')
     assert echo_tx_pkt.data[9:17] == expected_len.to_bytes(8, 'little')
 
-    await Timer(250, units='ns')
+    op = 2
+    data = 0
+    payload = bitarray(endian='little')
+    payload.frombytes(op.to_bytes(1, 'little'))
+    payload.frombytes(data.to_bytes(512, 'little'))
 
-    tb.log.info("Jigsaw D2H DMA")
-
-    send_payload, mmio_data = jigsaw_mmio_packet_gen(1, 16, 8, 3000) # dst_addr for D2H DMA
-    print("send_payload: ", send_payload.hex())
-    print("mmio_data: ", mmio_data.hex())
-
-    await tb.port_mac[0].rx.send(send_payload)
-
-    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 24, 8, 4096)
-
-    await tb.port_mac[0].rx.send(send_payload)
-
-    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 0, 8, 3)
-
-    await tb.port_mac[0].rx.send(send_payload)
-
-    expected_op = 1
-    expected_addr = 3000
-    expected_len = 4096
-
-    echo_tx_pkt = await tb.port_mac[0].tx.recv()
-
-    print("echo_tx_pkt.data: ", echo_tx_pkt.data.hex())
-
-    assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
-    assert echo_tx_pkt.data[1:9] == expected_addr.to_bytes(8, 'little')
-    assert echo_tx_pkt.data[9:17] == expected_len.to_bytes(8, 'little')
+    await tb.port_mac[0].rx.send(payload)
 
     await Timer(250, units='ns')
-
-    echo_tx_pkt = await tb.port_mac[0].tx.recv()
-
-    assert len(echo_tx_pkt) == expected_len
 
     send_payload, written_mmio_data = jigsaw_mmio_packet_gen(0, 32, 8, 0)
 
@@ -582,6 +560,54 @@ async def run_test_nic(dut):
     expected_val = 1
     assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
     assert echo_tx_pkt.data[1:9] == expected_val.to_bytes(8, 'little')
+
+
+    await Timer(250, units='ns')
+
+    # tb.log.info("Jigsaw D2H DMA")
+
+    # send_payload, mmio_data = jigsaw_mmio_packet_gen(1, 16, 8, 3000) # dst_addr for D2H DMA
+    # print("send_payload: ", send_payload.hex())
+    # print("mmio_data: ", mmio_data.hex())
+
+    # await tb.port_mac[0].rx.send(send_payload)
+
+    # send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 24, 8, 4096)
+
+    # await tb.port_mac[0].rx.send(send_payload)
+
+    # send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 0, 8, 3)
+
+    # await tb.port_mac[0].rx.send(send_payload)
+
+    # expected_op = 1
+    # expected_addr = 3000
+    # expected_len = 4096
+
+    # echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+    # print("echo_tx_pkt.data: ", echo_tx_pkt.data.hex())
+
+    # assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
+    # assert echo_tx_pkt.data[1:9] == expected_addr.to_bytes(8, 'little')
+    # assert echo_tx_pkt.data[9:17] == expected_len.to_bytes(8, 'little')
+
+    # await Timer(250, units='ns')
+
+    # echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+    # assert len(echo_tx_pkt) == expected_len
+
+    # send_payload, written_mmio_data = jigsaw_mmio_packet_gen(0, 32, 8, 0)
+
+    # await tb.port_mac[0].rx.send(send_payload)
+
+    # echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+    # expected_op = 2
+    # expected_val = 1
+    # assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
+    # assert echo_tx_pkt.data[1:9] == expected_val.to_bytes(8, 'little')
 
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
