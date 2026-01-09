@@ -99,6 +99,9 @@ module txn_generator #(
     wire dma_status_valid;
     wire clear_dma_start;
 
+    wire [63:0] dma_tx_len;
+    wire dma_tx_len_valid;
+
     // State machine to track multi-beat transactions
     localparam IDLE = 2'd0;
     localparam MMIO_ACTIVE = 2'd1;
@@ -245,7 +248,9 @@ module txn_generator #(
         .dma_status_valid(dma_status_valid),
         .computation_status(1'b0),
         .computation_status_valid(1'b0),
-        .clear_dma_start(clear_dma_start)
+        .clear_dma_start(clear_dma_start),
+        .dma_tx_len(dma_tx_len),
+        .dma_tx_len_valid(dma_tx_len_valid)
     );
 
     // DMA module
@@ -271,7 +276,9 @@ module txn_generator #(
         .payload_to_dma_out_tvalid(payload_to_dma_out_tvalid),
         .payload_to_dma_out_tready(payload_to_dma_out_tready),
         .payload_to_dma_out_tlast(payload_to_dma_out_tlast),
-        .payload_to_dma_out_tuser(payload_to_dma_out_tuser)
+        .payload_to_dma_out_tuser(payload_to_dma_out_tuser),
+        .dma_tx_length(dma_tx_len),
+        .dma_tx_length_valid(dma_tx_len_valid)
     );
 
     // Output mux: MMIO takes priority

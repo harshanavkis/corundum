@@ -18,11 +18,13 @@ module payload_to_mmio (
     input wire dma_status_valid,
     input wire computation_status,
     input wire computation_status_valid,
-    input wire clear_dma_start
+    input wire clear_dma_start,
+    input wire [63:0] dma_tx_len,
+    input wire dma_tx_len_valid
 );
 
 // Constants
-localparam NUM_REGS = 7;
+localparam NUM_REGS = 8;
 
 // Register map:
 //  0 (RW) - DMA command register is bitwise OR of the following:
@@ -41,6 +43,8 @@ localparam DMA_STATUS_REG = 4;
 localparam START_COMPUTATION_REG = 5;
 //  6 (RW) - Cycles per computation
 localparam CYCLES_PER_COMPUTATION_REG = 6;
+//  7 (RW) - DMA transfer length
+localparam DMA_TX_LEN_REG = 7;
 
 // Internal registers
 reg [63:0] slv_reg [0:NUM_REGS-1];
@@ -76,6 +80,11 @@ always @(posedge clk) begin
         // Latch DMA status when valid
         if (dma_status_valid) begin
             slv_reg[DMA_STATUS_REG][0] <= dma_status;
+        end
+
+        // Latch DMA transfer length when valid
+        if (dma_tx_len_valid) begin
+            slv_reg[DMA_TX_LEN_REG] <= dma_tx_len;
         end
         
         // Latch computation status when valid

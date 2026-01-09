@@ -27,7 +27,10 @@ module payload_to_dma #(
     output reg payload_to_dma_out_tvalid,
     input wire payload_to_dma_out_tready,
     output reg payload_to_dma_out_tlast,
-    output reg payload_to_dma_out_tuser
+    output reg payload_to_dma_out_tuser,
+
+    output reg [63:0] dma_tx_length,
+    output reg dma_tx_length_valid
 );
 
     // IDLE: DMA engine is waiting for DMA commands
@@ -150,11 +153,17 @@ module payload_to_dma #(
                 // On write completion, set the status of DMA register so that it can be polled by the CPU
                 dma_status_valid = (dma_d2h_count + KEEP_WIDTH >= dma_len);
                 dma_status = (dma_d2h_count + KEEP_WIDTH >= dma_len);
+                dma_tx_length_valid = payload_to_dma_in_tlast && payload_to_dma_in_tvalid;
+                dma_tx_length = dma_d2h_count + KEEP_WIDTH;
             end
             RECEIVE_PAYLOAD: begin
                 // On read completion, set the status of DMA register so that it can be polled by the CPU
                 dma_status_valid = payload_to_dma_in_tlast == 1'b1;
                 dma_status = payload_to_dma_in_tlast == 1'b1;
+                dma_tx_length_valid = payload_to_dma_in_tlast && payload_to_dma_in_tvalid;
+                dma_tx_length = dma_d2h_count + KEEP_WIDTH;
+
+                // TODO: payload_to_dma_in_tdata also contains the header, this must be stripped off
             end
             default: begin
                 // Do nothing
