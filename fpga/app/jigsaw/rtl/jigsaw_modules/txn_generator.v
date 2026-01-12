@@ -37,13 +37,13 @@ module txn_generator #(
             - For wr, payload is encrypted
     
     Packet structure received:
-        - |8-bit TYPE|Payload|
+        - |8-bit TYPE|Payload|, where TYPE is one of 0 (rd), 1 (wr), 2 (reply)
     
-    Payload structure:
-        - |8-bit OP|64-bit address|64-bit length|Payload Data|
+    Payload structure (for MMIO rd/wr):
+        - |64-bit address|64-bit length|Payload Data|
     
-    Payload Data for MMIO:
-        - 64-bit fixed size
+    Packet structure (for DMA reply in case of rd):
+        - |8-bit TYPE|Payload Data|
 
     Payload data for DMA:
         - Variable size depending on DMA'ed data
