@@ -627,11 +627,11 @@ async def run_test_nic(dut):
 
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    assert echo_tx_pkt.data[:1] == op.to_bytes(1, 'little')
-    assert echo_tx_pkt.data[1:9] == addr.to_bytes(8, 'little')
-    assert echo_tx_pkt.data[9:17] == data_len.to_bytes(8, 'little')
+    # assert echo_tx_pkt.data[:1] == op.to_bytes(1, 'little')
+    # assert echo_tx_pkt.data[1:9] == addr.to_bytes(8, 'little')
+    # assert echo_tx_pkt.data[9:17] == data_len.to_bytes(8, 'little')
 
-    assert len(echo_tx_pkt.data) == data_len + 17
+    assert len(echo_tx_pkt.data) == data_len
 
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)

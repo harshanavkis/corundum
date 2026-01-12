@@ -105,6 +105,9 @@ always @(*) begin
                     sq_len = network_in_tdata[LEN_POS +: LEN_WIDTH];
 
                     host_out_tvalid = 1'b1;
+
+                    host_out_tdata = network_in_tdata >> DATA_POS;
+                    host_out_tkeep = network_in_tkeep >> (DATA_POS / 8);
                 end
             end
         end
