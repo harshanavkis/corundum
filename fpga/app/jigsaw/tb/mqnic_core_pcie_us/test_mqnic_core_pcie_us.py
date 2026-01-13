@@ -649,9 +649,13 @@ async def run_test_nic(dut):
 
     await tb.port_mac[0].rx.send(payload)
 
+    await Timer(250, units='ns')
+
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
-    assert len(echo_tx_pkt.data) == data_len
+    op = 2
+    assert echo_tx_pkt.data[:1] == op.to_bytes(1, 'little')
+    assert len(echo_tx_pkt.data) == data_len + 64
 
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)

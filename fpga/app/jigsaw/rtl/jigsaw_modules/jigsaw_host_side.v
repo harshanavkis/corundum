@@ -111,6 +111,8 @@ always @(*) begin
 
                     host_out_tvalid = 1'b1;
 
+                    // TODO: This assumes that header and data is in the same packet, but payload_to_dma
+                    // sends header and payload in separate packets, this must be changed
                     host_out_tdata = network_in_tdata >> DATA_POS;
                     host_out_tkeep = network_in_tkeep >> (DATA_POS / 8);
                 end
@@ -161,6 +163,14 @@ always @(*) begin
                     sq_dir_read = 1'b0;
                     sq_addr_read = network_in_tdata[ADDR_POS +: ADDR_WIDTH];
                     sq_len_read = network_in_tdata[LEN_POS +: LEN_WIDTH];
+
+                    // TODO: This wastes 63 bytes per transaction, we should probably use
+                    // and axis_arb_mux: https://github.com/alexforencich/verilog-axis/blob/master/rtl/axis_arb_mux.v.
+                    // This is because partial tkeep can only be used when tlast is high.
+                    network_out_tvalid = 1'b1;
+                    network_out_tdata = {{(AXI_DATA_WIDTH - 8){1'b0}}, {8'd2}};
+                    network_out_tkeep = {{KEEP_WIDTH}{1'b1}};
+                    // network_out_tkeep = {{(KEEP_WIDTH - 1){1'b0}}, {1{1'b1}}};
                 end
             end
         end
