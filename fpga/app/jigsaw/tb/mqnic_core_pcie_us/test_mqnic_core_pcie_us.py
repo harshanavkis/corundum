@@ -609,27 +609,47 @@ async def run_test_nic(dut):
     # assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
     # assert echo_tx_pkt.data[1:9] == expected_val.to_bytes(8, 'little')
 
-    tb.log.info("Jigsaw local host controller: Write op")
+    # tb.log.info("Jigsaw local host controller: Write op")
 
-    op = 1
+    # op = 1
+    # addr = 3000
+    # data_len = 2048 -17
+    # data = 0
+    # payload = bitarray(endian='little')
+    # payload.frombytes(op.to_bytes(1, 'little'))
+    # payload.frombytes(addr.to_bytes(8, 'little'))
+    # payload.frombytes(data_len.to_bytes(8, 'little'))
+    # payload.frombytes(data.to_bytes(data_len, 'little'))
+
+    # await tb.port_mac[0].rx.send(payload)
+
+    # await Timer(250, units='ns')
+
+    # echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+    # assert len(echo_tx_pkt.data) == data_len
+
+    tb.log.info("Jigsaw local host controller: Read op")
+
+    op = 0
     addr = 3000
-    data_len = 2048 -17
-    data = 0
+    data_len = 2048
     payload = bitarray(endian='little')
     payload.frombytes(op.to_bytes(1, 'little'))
     payload.frombytes(addr.to_bytes(8, 'little'))
     payload.frombytes(data_len.to_bytes(8, 'little'))
-    payload.frombytes(data.to_bytes(data_len, 'little'))
 
     await tb.port_mac[0].rx.send(payload)
 
     await Timer(250, units='ns')
 
-    echo_tx_pkt = await tb.port_mac[0].tx.recv()
+    data = 0
+    payload = bitarray(endian='little')
+    payload.frombytes(data.to_bytes(data_len, 'little'))
 
-    # assert echo_tx_pkt.data[:1] == op.to_bytes(1, 'little')
-    # assert echo_tx_pkt.data[1:9] == addr.to_bytes(8, 'little')
-    # assert echo_tx_pkt.data[9:17] == data_len.to_bytes(8, 'little')
+    await tb.port_mac[0].rx.send(payload)
+
+    echo_tx_pkt = await tb.port_mac[0].tx.recv()
 
     assert len(echo_tx_pkt.data) == data_len
 

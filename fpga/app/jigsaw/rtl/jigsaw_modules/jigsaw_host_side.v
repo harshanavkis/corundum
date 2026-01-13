@@ -41,10 +41,15 @@ module jigsaw_host_side #(
     output logic host_out_tuser,
 
     // Submission queue interfaces
-    output logic sq_valid,
-    output logic sq_dir,
-    output logic [63:0] sq_addr,
-    output logic [63:0] sq_len,
+    output logic sq_valid_write,
+    output logic sq_dir_write,
+    output logic [63:0] sq_addr_write,
+    output logic [63:0] sq_len_write,
+
+    output logic sq_valid_read,
+    output logic sq_dir_read,
+    output logic [63:0] sq_addr_read,
+    output logic [63:0] sq_len_read,
 
     // Host side MMIO vaddr
     input logic [63:0] mmio_vaddr
@@ -89,20 +94,20 @@ always @(*) begin
     host_out_tkeep = network_in_tkeep;
     host_out_tuser = network_in_tuser;
     
-    sq_valid = 1'b0;
-    sq_dir = 1'b0;
-    sq_addr = 64'b0;
-    sq_len = 64'b0;
+    sq_valid_write = 1'b0;
+    sq_dir_write = 1'b0;
+    sq_addr_write = 64'b0;
+    sq_len_write = 64'b0;
     
     case (dma_wr_state_cur)
         DMA_IDLE: begin
             if (network_in_tvalid && host_out_tready) begin
                 if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd1) begin
                     dma_wr_state_next = DMA_WR;
-                    sq_valid = 1'b1;
-                    sq_dir = 1'b1;
-                    sq_addr = network_in_tdata[ADDR_POS +: ADDR_WIDTH];
-                    sq_len = network_in_tdata[LEN_POS +: LEN_WIDTH];
+                    sq_valid_write = 1'b1;
+                    sq_dir_write = 1'b1;
+                    sq_addr_write = network_in_tdata[ADDR_POS +: ADDR_WIDTH];
+                    sq_len_write = network_in_tdata[LEN_POS +: LEN_WIDTH];
 
                     host_out_tvalid = 1'b1;
 
@@ -125,5 +130,54 @@ always @(*) begin
 end
 
 // DMA Read process
+always @(posedge clk) begin
+    if (rst) begin
+        dma_rd_state_cur <= DMA_IDLE;
+    end else begin
+        dma_rd_state_cur <= dma_rd_state_next;
+    end
+end
 
+always @(*) begin
+    dma_rd_state_next = dma_rd_state_cur;
+    
+    sq_valid_read = 1'b0;
+    sq_dir_read = 1'b0;
+    sq_addr_read = 64'b0;
+    sq_len_read = 64'b0;
+
+    network_out_tvalid = 1'b0;
+    network_out_tlast = 1'b0;
+    network_out_tdata = 512'b0;
+    network_out_tkeep = 64'b0;
+    network_out_tuser = 1'b0;
+
+    case (dma_rd_state_cur)
+        DMA_IDLE: begin
+            if (network_in_tvalid && network_out_tready) begin
+                if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd0) begin
+                    dma_rd_state_next = DMA_RD;
+                    sq_valid_read = 1'b1;
+                    sq_dir_read = 1'b0;
+                    sq_addr_read = network_in_tdata[ADDR_POS +: ADDR_WIDTH];
+                    sq_len_read = network_in_tdata[LEN_POS +: LEN_WIDTH];
+                end
+            end
+        end
+        DMA_RD: begin
+            network_out_tvalid = host_in_tvalid; 
+            network_out_tlast = host_in_tlast;
+            network_out_tdata = host_in_tdata;
+            network_out_tkeep = host_in_tkeep;
+            network_out_tuser = host_in_tuser;
+            
+            if (host_in_tvalid && network_out_tready) begin
+                if (host_in_tlast) begin
+                    dma_rd_state_next = DMA_IDLE;
+                end
+            end
+        end
+        default: ;
+    endcase
+end
 endmodule
