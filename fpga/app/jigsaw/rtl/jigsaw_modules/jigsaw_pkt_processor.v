@@ -130,7 +130,9 @@ module jigsaw_pkt_processor #(
         .sq_dir_read(),
         .sq_addr_read(),
         .sq_len_read(),
-        .mmio_vaddr()
+        .mmio_vaddr(),
+        .mmio_ctrl(),
+        .mmio_clear()
     );
 
 endmodule

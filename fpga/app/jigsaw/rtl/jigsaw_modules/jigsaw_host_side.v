@@ -52,11 +52,12 @@ module jigsaw_host_side #(
     output logic [63:0] sq_len_read,
 
     // Host side MMIO vaddr
-    input logic [63:0] mmio_vaddr
-);
+    input logic [63:0] mmio_vaddr,
 
-assign host_in_tready = network_out_tready;
-assign network_in_tready = host_out_tready;
+    // MMIO specific control signals
+    input logic mmio_ctrl,
+    output logic mmio_clear
+);
 
 localparam OP_POS = 0;
 localparam ADDR_POS = OP_POS + OP_WIDTH;
@@ -64,9 +65,25 @@ localparam LEN_POS = ADDR_POS + ADDR_WIDTH;
 localparam DATA_POS = LEN_POS + LEN_WIDTH;
 
 // MMIO process
+// MMIO is a single cycle operation, but is different for reads and writes
+// Read: If the CPU triggers a MMIO read, the request can be sent over the network
+//  iff a DMA read is not in progress to prevent overlapping transactions.
+//  However we need to wait for a response for a read. Since our transaction ordering
+//  prevents overlapping transactions, we can just wait for a packet with with a reply (0x2) header
+//  provided a DMA write isn't in progress.
+// Write: If the CPU triggers a MMIO write, the request can be sent over the network
+//  iff a DMA read isn't in progress to prevent overlapping transactions.
+//  However we don't need to wait for a response for a write. Since our transaction ordering
+//  prevents overlapping transactions, we can just send the request and move on.
+// For getting/setting the payload use the host_in* interfaces and the sq/cq,
+// but why: to reduce the number of PCIe messages with the host
 
+logic [1:0] mmio_state_cur, mmio_state_next;
 
-// DMA process
+localparam MMIO_IDLE = 2'b00;
+localparam MMIO_ACTIVE = 2'b01;
+localparam MMIO_RSP = 2'b10;
+
 logic [1:0] dma_rd_state_cur, dma_rd_state_next;
 logic [1:0] dma_wr_state_cur, dma_wr_state_next;
 
@@ -74,35 +91,89 @@ localparam DMA_IDLE = 2'b00;
 localparam DMA_RD = 2'b01;
 localparam DMA_WR = 2'b10;
 
-// DMA Write process
 always @(posedge clk) begin
     if (rst) begin
+        mmio_state_cur <= MMIO_IDLE;
         dma_wr_state_cur <= DMA_IDLE;
+        dma_rd_state_cur <= DMA_IDLE;
     end else begin
+        mmio_state_cur <= mmio_state_next;
         dma_wr_state_cur <= dma_wr_state_next;
+        dma_rd_state_cur <= dma_rd_state_next;
     end
 end
 
-// TODO: Maybe add a FIFO between the network_in and host_out interfaces,
-// since in simulation host_out_tready seems to go low after some time
-// for a large amount of data
+// Combinatorial logic for MMIO and DMA
 always @(*) begin
+    // Default values to avoid latches and multiple drivers
+    mmio_state_next = mmio_state_cur;
     dma_wr_state_next = dma_wr_state_cur;
-    host_out_tvalid = 1'b0;
-    host_out_tlast = 1'b0;
-    host_out_tdata = network_in_tdata;
-    host_out_tkeep = network_in_tkeep;
-    host_out_tuser = network_in_tuser;
-    
+    dma_rd_state_next = dma_rd_state_cur;
+
+    mmio_clear = 1'b0;
+
     sq_valid_write = 1'b0;
     sq_dir_write = 1'b0;
     sq_addr_write = 64'b0;
     sq_len_write = 64'b0;
-    
+
+    sq_valid_read = 1'b0;
+    sq_dir_read = 1'b0;
+    sq_addr_read = 64'b0;
+    sq_len_read = 64'b0;
+
+    host_out_tdata = network_in_tdata;
+    host_out_tkeep = network_in_tkeep;
+    host_out_tvalid = 1'b0;
+    host_out_tlast = 1'b0;
+    host_out_tuser = network_in_tuser;
+
+    network_out_tdata = 512'b0;
+    network_out_tkeep = 64'b0;
+    network_out_tvalid = 1'b0;
+    network_out_tlast = 1'b0;
+    network_out_tuser = 1'b0;
+
+    // MMIO State Machine
+    case (mmio_state_cur)
+        MMIO_IDLE: begin
+            if (mmio_ctrl && dma_rd_state_cur == DMA_IDLE) begin
+                mmio_state_next = MMIO_ACTIVE;
+                mmio_clear = 1'b1;
+                sq_valid_read = 1'b1;
+                sq_dir_read = 1'b0;
+                sq_addr_read = mmio_vaddr;
+                sq_len_read = 64'd25;
+            end
+        end
+        MMIO_ACTIVE: begin
+            if (host_in_tvalid && host_in_tlast) begin
+                // Only when both tvalid and tlast since we can send partial tkeep only in this case
+                if (host_in_tdata[OP_POS +: OP_WIDTH] == 8'd0) begin
+                    network_out_tdata = {{(AXI_DATA_WIDTH - 136){1'b0}}, host_in_tdata[135:0]};
+                    // Since we do not have a payload for read, we send smaller tkeep
+                    network_out_tkeep = {{(KEEP_WIDTH - 17){1'b0}}, 17'h1FFFF};
+                    mmio_state_next = MMIO_IDLE;
+                end else if (host_in_tdata[OP_POS +: OP_WIDTH] == 8'd1) begin
+                    network_out_tdata = {{(AXI_DATA_WIDTH - 200){1'b0}}, host_in_tdata[200:0]};
+                    network_out_tkeep = {{(KEEP_WIDTH - 25){1'b0}}, 25'h1FFFFFF};
+                    mmio_state_next = MMIO_IDLE;
+                end else begin
+                    // Wrong MMIO OP
+                    mmio_state_next = MMIO_IDLE;
+                end
+            end
+        end
+        default: mmio_state_next = MMIO_IDLE;
+    endcase
+
+    // DMA Write State Machine
     case (dma_wr_state_cur)
         DMA_IDLE: begin
             if (network_in_tvalid && host_out_tready) begin
                 if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd1) begin
+                    // Priority check: Don't start DMA write if MMIO is active? 
+                    // Actually, network_in is shared. If it's a DMA write op, handle it.
                     dma_wr_state_next = DMA_WR;
                     sq_valid_write = 1'b1;
                     sq_dir_write = 1'b1;
@@ -115,48 +186,38 @@ always @(*) begin
                     // sends header and payload in separate packets, this must be changed
                     host_out_tdata = network_in_tdata >> DATA_POS;
                     host_out_tkeep = network_in_tkeep >> (DATA_POS / 8);
+                end else if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd2 && mmio_state_cur == MMIO_IDLE) begin
+                    // This is a MMIO Response from network_in
+                    sq_valid_write = 1'b1;
+                    sq_dir_write = 1'b0;
+                    sq_addr_write = mmio_vaddr;
+                    sq_len_write = 64'd8;
+
+                    host_out_tdata = {{(AXI_DATA_WIDTH - ADDR_WIDTH){1'b0}}, network_in_tdata[ADDR_POS +: ADDR_WIDTH]};
+                    host_out_tkeep = {{(KEEP_WIDTH - 8){1'b0}}, 8'hFF};
+                    host_out_tvalid = network_in_tvalid;
+                    host_out_tlast = network_in_tlast;
                 end
             end
         end
         DMA_WR: begin
             if (network_in_tvalid && host_out_tready) begin
                 host_out_tvalid = 1'b1;
+                host_out_tdata = network_in_tdata;
+                host_out_tkeep = network_in_tkeep;
                 if (network_in_tlast) begin
                     dma_wr_state_next = DMA_IDLE;
                     host_out_tlast = 1'b1;
                 end
             end
         end
-        default: ;
+        default: dma_wr_state_next = DMA_IDLE;
     endcase
-end
 
-// DMA Read process
-always @(posedge clk) begin
-    if (rst) begin
-        dma_rd_state_cur <= DMA_IDLE;
-    end else begin
-        dma_rd_state_cur <= dma_rd_state_next;
-    end
-end
-
-always @(*) begin
-    dma_rd_state_next = dma_rd_state_cur;
-    
-    sq_valid_read = 1'b0;
-    sq_dir_read = 1'b0;
-    sq_addr_read = 64'b0;
-    sq_len_read = 64'b0;
-
-    network_out_tvalid = 1'b0;
-    network_out_tlast = 1'b0;
-    network_out_tdata = 512'b0;
-    network_out_tkeep = 64'b0;
-    network_out_tuser = 1'b0;
-
+    // DMA Read State Machine
     case (dma_rd_state_cur)
         DMA_IDLE: begin
-            if (network_in_tvalid && network_out_tready) begin
+            if (network_in_tvalid && network_out_tready && mmio_state_cur == MMIO_IDLE) begin
                 if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd0) begin
                     dma_rd_state_next = DMA_RD;
                     sq_valid_read = 1'b1;
@@ -170,24 +231,32 @@ always @(*) begin
                     network_out_tvalid = 1'b1;
                     network_out_tdata = {{(AXI_DATA_WIDTH - 8){1'b0}}, {8'd2}};
                     network_out_tkeep = {{KEEP_WIDTH}{1'b1}};
-                    // network_out_tkeep = {{(KEEP_WIDTH - 1){1'b0}}, {1{1'b1}}};
                 end
             end
         end
         DMA_RD: begin
-            network_out_tvalid = host_in_tvalid; 
-            network_out_tlast = host_in_tlast;
-            network_out_tdata = host_in_tdata;
-            network_out_tkeep = host_in_tkeep;
-            network_out_tuser = host_in_tuser;
-            
-            if (host_in_tvalid && network_out_tready) begin
-                if (host_in_tlast) begin
-                    dma_rd_state_next = DMA_IDLE;
+            // DMA Read uses host_in to send data to network_out
+            // If MMIO is active, it also wants to use network_out.
+            // MMIO_ACTIVE has priority for network_out in this implementation
+            if (mmio_state_cur != MMIO_ACTIVE) begin
+                network_out_tvalid = host_in_tvalid; 
+                network_out_tlast = host_in_tlast;
+                network_out_tdata = host_in_tdata;
+                network_out_tkeep = host_in_tkeep;
+                network_out_tuser = host_in_tuser;
+                
+                if (host_in_tvalid && network_out_tready) begin
+                    if (host_in_tlast) begin
+                        dma_rd_state_next = DMA_IDLE;
+                    end
                 end
             end
         end
-        default: ;
+        default: dma_rd_state_next = DMA_IDLE;
     endcase
 end
+
+assign host_in_tready = network_out_tready;
+assign network_in_tready = host_out_tready;
+
 endmodule
