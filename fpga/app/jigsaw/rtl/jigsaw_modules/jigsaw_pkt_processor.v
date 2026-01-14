@@ -132,7 +132,9 @@ module jigsaw_pkt_processor #(
         .sq_len_read(),
         .mmio_vaddr(),
         .mmio_ctrl(),
-        .mmio_clear()
+        .mmio_clear(),
+        .mmio_write_done(),
+        .mmio_read_done()
     );
 
 endmodule

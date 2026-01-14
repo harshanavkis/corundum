@@ -56,7 +56,9 @@ module jigsaw_host_side #(
 
     // MMIO specific control signals
     input logic mmio_ctrl,
-    output logic mmio_clear
+    output logic mmio_clear,
+    output logic mmio_write_done,
+    output logic mmio_read_done
 );
 
 localparam OP_POS = 0;
@@ -134,6 +136,9 @@ always @(*) begin
     network_out_tlast = 1'b0;
     network_out_tuser = 1'b0;
 
+    mmio_write_done = 1'b0;
+    mmio_read_done = 1'b0;
+
     // MMIO State Machine
     case (mmio_state_cur)
         MMIO_IDLE: begin
@@ -160,6 +165,7 @@ always @(*) begin
                     network_out_tdata = {{(AXI_DATA_WIDTH - 200){1'b0}}, host_in_tdata[200:0]};
                     network_out_tkeep = {{(KEEP_WIDTH - 25){1'b0}}, 25'h1FFFFFF};
                     mmio_state_next = MMIO_IDLE;
+                    mmio_write_done = network_out_tready;
                 end else begin
                     // Wrong MMIO OP
                     mmio_state_next = MMIO_IDLE;
@@ -199,6 +205,7 @@ always @(*) begin
                     host_out_tkeep = {{(KEEP_WIDTH - 8){1'b0}}, 8'hFF};
                     host_out_tvalid = network_in_tvalid;
                     host_out_tlast = network_in_tlast;
+                    mmio_read_done = host_out_tready;
                 end
             end
         end
