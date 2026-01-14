@@ -142,13 +142,15 @@ always @(*) begin
                 mmio_clear = 1'b1;
                 sq_valid_read = 1'b1;
                 sq_dir_read = 1'b0;
-                sq_addr_read = mmio_vaddr;
+                sq_addr_read = mmio_vaddr + 64'd24;
                 sq_len_read = 64'd25;
             end
         end
         MMIO_ACTIVE: begin
             if (host_in_tvalid && host_in_tlast) begin
                 // Only when both tvalid and tlast since we can send partial tkeep only in this case
+                network_out_tvalid = host_in_tvalid;
+                network_out_tlast = host_in_tlast;
                 if (host_in_tdata[OP_POS +: OP_WIDTH] == 8'd0) begin
                     network_out_tdata = {{(AXI_DATA_WIDTH - 136){1'b0}}, host_in_tdata[135:0]};
                     // Since we do not have a payload for read, we send smaller tkeep
@@ -186,11 +188,11 @@ always @(*) begin
                     // sends header and payload in separate packets, this must be changed
                     host_out_tdata = network_in_tdata >> DATA_POS;
                     host_out_tkeep = network_in_tkeep >> (DATA_POS / 8);
-                end else if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd2 && mmio_state_cur == MMIO_IDLE) begin
+                end else if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd2) begin
                     // This is a MMIO Response from network_in
                     sq_valid_write = 1'b1;
                     sq_dir_write = 1'b0;
-                    sq_addr_write = mmio_vaddr;
+                    sq_addr_write = mmio_vaddr + 64'd16;
                     sq_len_write = 64'd8;
 
                     host_out_tdata = {{(AXI_DATA_WIDTH - ADDR_WIDTH){1'b0}}, network_in_tdata[ADDR_POS +: ADDR_WIDTH]};
@@ -219,18 +221,20 @@ always @(*) begin
         DMA_IDLE: begin
             if (network_in_tvalid && network_out_tready && mmio_state_cur == MMIO_IDLE) begin
                 if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd0) begin
-                    dma_rd_state_next = DMA_RD;
-                    sq_valid_read = 1'b1;
-                    sq_dir_read = 1'b0;
-                    sq_addr_read = network_in_tdata[ADDR_POS +: ADDR_WIDTH];
-                    sq_len_read = network_in_tdata[LEN_POS +: LEN_WIDTH];
+                    if (!sq_valid_read) begin // Arbitration: Prioritize MMIO over DMA Read for SQ access
+                        dma_rd_state_next = DMA_RD;
+                        sq_valid_read = 1'b1;
+                        sq_dir_read = 1'b0;
+                        sq_addr_read = network_in_tdata[ADDR_POS +: ADDR_WIDTH];
+                        sq_len_read = network_in_tdata[LEN_POS +: LEN_WIDTH];
 
-                    // TODO: This wastes 63 bytes per transaction, we should probably use
-                    // and axis_arb_mux: https://github.com/alexforencich/verilog-axis/blob/master/rtl/axis_arb_mux.v.
-                    // This is because partial tkeep can only be used when tlast is high.
-                    network_out_tvalid = 1'b1;
-                    network_out_tdata = {{(AXI_DATA_WIDTH - 8){1'b0}}, {8'd2}};
-                    network_out_tkeep = {{KEEP_WIDTH}{1'b1}};
+                        // TODO: This wastes 63 bytes per transaction, we should probably use
+                        // and axis_arb_mux: https://github.com/alexforencich/verilog-axis/blob/master/rtl/axis_arb_mux.v.
+                        // This is because partial tkeep can only be used when tlast is high.
+                        network_out_tvalid = 1'b1;
+                        network_out_tdata = {{(AXI_DATA_WIDTH - 8){1'b0}}, {8'd2}};
+                        network_out_tkeep = {{KEEP_WIDTH}{1'b1}};
+                    end
                 end
             end
         end
