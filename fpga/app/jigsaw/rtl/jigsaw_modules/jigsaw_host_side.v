@@ -267,7 +267,29 @@ always @(*) begin
     endcase
 end
 
-assign host_in_tready = network_out_tready;
-assign network_in_tready = host_out_tready;
+// assign host_in_tready = network_out_tready;
+// assign network_in_tready = host_out_tready;
+
+always_comb begin
+    // host_in_tready: Only ready if we are in a state that uses host_in 
+    // AND the network_out is ready to take it.
+    host_in_tready = (mmio_state_cur == MMIO_ACTIVE || dma_rd_state_cur == DMA_RD) && network_out_tready;
+
+    // network_in_tready: This is the most critical one.
+    // It must check which output is needed based on the opcode.
+    if (dma_wr_state_cur == DMA_WR) begin
+        // We are currently streaming a DMA write to the host
+        network_in_tready = host_out_tready;
+    end else if (dma_wr_state_cur == DMA_IDLE && dma_rd_state_cur == DMA_IDLE) begin
+        // We are in IDLE, looking for a new command
+        case (network_in_tdata[OP_POS +: OP_WIDTH])
+            8'd0:    network_in_tready = network_out_tready && mmio_state_cur == MMIO_IDLE; // DMA Read needs network_out
+            8'd1, 8'd2: network_in_tready = host_out_tready; // DMA Write / MMIO Resp need host_out
+            default: network_in_tready = 1'b0;
+        endcase
+    end else begin
+        network_in_tready = 1'b0;
+    end
+end
 
 endmodule
