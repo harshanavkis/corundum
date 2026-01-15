@@ -35,22 +35,22 @@ module jigsaw_pkt_processor #(
     localparam DATA_POS = LEN_POS + LEN_WIDTH;
     localparam KEEP_HEADER = (ID_WIDTH + OP_WIDTH + ADDR_WIDTH + LEN_WIDTH)/8;
 
-    // txn_generator txner(
-    //     .clk(clk),
-    //     .rst(rst),
-    //     .txn_generator_in_tdata(s_axis_sync_rx_tdata),
-    //     .txn_generator_in_tkeep(s_axis_sync_rx_tkeep),
-    //     .txn_generator_in_tvalid(s_axis_sync_rx_tvalid),
-    //     .txn_generator_in_tready(s_axis_sync_rx_tready),
-    //     .txn_generator_in_tlast(s_axis_sync_rx_tlast),
-    //     .txn_generator_in_tuser(s_axis_sync_rx_tuser),
-    //     .txn_generator_out_tdata(m_axis_sync_tx_tdata),
-    //     .txn_generator_out_tkeep(m_axis_sync_tx_tkeep),
-    //     .txn_generator_out_tvalid(m_axis_sync_tx_tvalid),
-    //     .txn_generator_out_tready(m_axis_sync_tx_tready),
-    //     .txn_generator_out_tlast(m_axis_sync_tx_tlast),
-    //     .txn_generator_out_tuser(m_axis_sync_tx_tuser)
-    // );
+    txn_generator txner(
+        .clk(clk),
+        .rst(rst),
+        .txn_generator_in_tdata(s_axis_sync_rx_tdata),
+        .txn_generator_in_tkeep(s_axis_sync_rx_tkeep),
+        .txn_generator_in_tvalid(s_axis_sync_rx_tvalid),
+        .txn_generator_in_tready(s_axis_sync_rx_tready),
+        .txn_generator_in_tlast(s_axis_sync_rx_tlast),
+        .txn_generator_in_tuser(s_axis_sync_rx_tuser),
+        .txn_generator_out_tdata(m_axis_sync_tx_tdata),
+        .txn_generator_out_tkeep(m_axis_sync_tx_tkeep),
+        .txn_generator_out_tvalid(m_axis_sync_tx_tvalid),
+        .txn_generator_out_tready(m_axis_sync_tx_tready),
+        .txn_generator_out_tlast(m_axis_sync_tx_tlast),
+        .txn_generator_out_tuser(m_axis_sync_tx_tuser)
+    );
 
     // jigsaw_host_side jigsaw_host_side_dma_wr (
     //     .clk(clk),
@@ -90,51 +90,51 @@ module jigsaw_pkt_processor #(
     //     .mmio_vaddr()
     // );
 
-    logic network_in_tready;
-    logic host_in_tready;
+    // logic network_in_tready;
+    // logic host_in_tready;
 
-    assign s_axis_sync_rx_tready = network_in_tready || host_in_tready;
+    // assign s_axis_sync_rx_tready = network_in_tready || host_in_tready;
     
-    jigsaw_host_side jigsaw_host_side_dma_rd (
-        .clk(clk),
-        .rst(rst),
-        .network_in_tdata(s_axis_sync_rx_tdata),
-        .network_in_tkeep(s_axis_sync_rx_tkeep),
-        .network_in_tvalid(s_axis_sync_rx_tvalid),
-        .network_in_tready(network_in_tready),
-        .network_in_tlast(s_axis_sync_rx_tlast),
-        .network_in_tuser(s_axis_sync_rx_tuser),
-        .network_out_tdata(m_axis_sync_tx_tdata),
-        .network_out_tkeep(m_axis_sync_tx_tkeep),
-        .network_out_tvalid(m_axis_sync_tx_tvalid),
-        .network_out_tready(m_axis_sync_tx_tready),
-        .network_out_tlast(m_axis_sync_tx_tlast),
-        .network_out_tuser(m_axis_sync_tx_tuser),
-        .host_in_tdata(s_axis_sync_rx_tdata),
-        .host_in_tkeep(s_axis_sync_rx_tkeep),
-        .host_in_tvalid(s_axis_sync_rx_tvalid),
-        .host_in_tready(host_in_tready),
-        .host_in_tlast(s_axis_sync_rx_tlast),
-        .host_in_tuser(s_axis_sync_rx_tuser),
-        .host_out_tdata(),
-        .host_out_tkeep(),
-        .host_out_tvalid(),
-        .host_out_tready(m_axis_sync_tx_tready),
-        .host_out_tlast(),
-        .host_out_tuser(),
-        .sq_valid_write(),
-        .sq_dir_write(),
-        .sq_addr_write(),
-        .sq_len_write(),
-        .sq_valid_read(),
-        .sq_dir_read(),
-        .sq_addr_read(),
-        .sq_len_read(),
-        .mmio_vaddr(),
-        .mmio_ctrl(),
-        .mmio_clear(),
-        .mmio_write_done(),
-        .mmio_read_done()
-    );
+    // jigsaw_host_side jigsaw_host_side_dma_rd (
+    //     .clk(clk),
+    //     .rst(rst),
+    //     .network_in_tdata(s_axis_sync_rx_tdata),
+    //     .network_in_tkeep(s_axis_sync_rx_tkeep),
+    //     .network_in_tvalid(s_axis_sync_rx_tvalid),
+    //     .network_in_tready(network_in_tready),
+    //     .network_in_tlast(s_axis_sync_rx_tlast),
+    //     .network_in_tuser(s_axis_sync_rx_tuser),
+    //     .network_out_tdata(m_axis_sync_tx_tdata),
+    //     .network_out_tkeep(m_axis_sync_tx_tkeep),
+    //     .network_out_tvalid(m_axis_sync_tx_tvalid),
+    //     .network_out_tready(m_axis_sync_tx_tready),
+    //     .network_out_tlast(m_axis_sync_tx_tlast),
+    //     .network_out_tuser(m_axis_sync_tx_tuser),
+    //     .host_in_tdata(s_axis_sync_rx_tdata),
+    //     .host_in_tkeep(s_axis_sync_rx_tkeep),
+    //     .host_in_tvalid(s_axis_sync_rx_tvalid),
+    //     .host_in_tready(host_in_tready),
+    //     .host_in_tlast(s_axis_sync_rx_tlast),
+    //     .host_in_tuser(s_axis_sync_rx_tuser),
+    //     .host_out_tdata(),
+    //     .host_out_tkeep(),
+    //     .host_out_tvalid(),
+    //     .host_out_tready(m_axis_sync_tx_tready),
+    //     .host_out_tlast(),
+    //     .host_out_tuser(),
+    //     .sq_valid_write(),
+    //     .sq_dir_write(),
+    //     .sq_addr_write(),
+    //     .sq_len_write(),
+    //     .sq_valid_read(),
+    //     .sq_dir_read(),
+    //     .sq_addr_read(),
+    //     .sq_len_read(),
+    //     .mmio_vaddr(),
+    //     .mmio_ctrl(),
+    //     .mmio_clear(),
+    //     .mmio_write_done(),
+    //     .mmio_read_done()
+    // );
 
 endmodule

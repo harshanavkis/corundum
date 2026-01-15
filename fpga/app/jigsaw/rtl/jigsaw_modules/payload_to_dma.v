@@ -133,12 +133,13 @@ module payload_to_dma #(
             SEND_HEADER: begin
                 if (h2d) begin // TODO: right now when h2d is 1, it is a d2h actually
                     payload_to_dma_out_tdata = {dma_len, dma_dst_addr, h2d};
-                    payload_to_dma_out_tlast = 1'b1;
+                    payload_to_dma_out_tlast = 1'b0; // Header and payload are merged
+                    payload_to_dma_out_tkeep = {KEEP_WIDTH{1'b1}};
                 end else begin
                     payload_to_dma_out_tdata = {dma_len, dma_src_addr, h2d};
-                    payload_to_dma_out_tlast = 1'b1;
+                    payload_to_dma_out_tlast = 1'b1; // Read has no payload
+                    payload_to_dma_out_tkeep = {{(KEEP_WIDTH - 17){1'b0}}, {17{1'b1}}};
                 end
-                payload_to_dma_out_tkeep = {{(KEEP_WIDTH - 17){1'b0}}, {17{1'b1}}};
                 payload_to_dma_out_tvalid = 1'b1;
             end
 
