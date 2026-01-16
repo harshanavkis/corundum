@@ -226,21 +226,25 @@ always @(*) begin
     // DMA Read State Machine
     case (dma_rd_state_cur)
         DMA_IDLE: begin
-            if (network_in_tvalid && network_out_tready && mmio_state_cur == MMIO_IDLE) begin
+            if (network_in_tvalid && mmio_state_cur == MMIO_IDLE) begin
                 if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd0) begin
                     if (!sq_valid_read) begin // Arbitration: Prioritize MMIO over DMA Read for SQ access
-                        dma_rd_state_next = DMA_RD;
-                        sq_valid_read = 1'b1;
-                        sq_dir_read = 1'b0;
-                        sq_addr_read = network_in_tdata[ADDR_POS +: ADDR_WIDTH];
-                        sq_len_read = network_in_tdata[LEN_POS +: LEN_WIDTH];
-
+                        // Fix for combinatorial loop: Valid/Data generation should NOT depend on Ready
                         // TODO: This wastes 63 bytes per transaction, we should probably use
                         // and axis_arb_mux: https://github.com/alexforencich/verilog-axis/blob/master/rtl/axis_arb_mux.v.
                         // This is because partial tkeep can only be used when tlast is high.
                         network_out_tvalid = 1'b1;
                         network_out_tdata = {{(AXI_DATA_WIDTH - 8){1'b0}}, {8'd2}};
                         network_out_tkeep = {{KEEP_WIDTH}{1'b1}};
+
+                        // Only transition state and issue SQ request if ready
+                        if (network_out_tready) begin
+                            dma_rd_state_next = DMA_RD;
+                            sq_valid_read = 1'b1;
+                            sq_dir_read = 1'b0;
+                            sq_addr_read = network_in_tdata[ADDR_POS +: ADDR_WIDTH];
+                            sq_len_read = network_in_tdata[LEN_POS +: LEN_WIDTH];
+                        end
                     end
                 end
             end
