@@ -561,6 +561,17 @@ async def run_test_nic(dut):
     assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
     assert echo_tx_pkt.data[1:9] == expected_val.to_bytes(8, 'little')
 
+    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(0, 56, 8, 0)
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+    expected_op = 2
+    expected_val = 512 + 64
+    assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
+    assert echo_tx_pkt.data[1:9] == expected_val.to_bytes(8, 'little')
+
 
     await Timer(250, units='ns')
 
@@ -604,6 +615,17 @@ async def run_test_nic(dut):
 
     expected_op = 2
     expected_val = 1
+    assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
+    assert echo_tx_pkt.data[1:9] == expected_val.to_bytes(8, 'little')
+
+    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(0, 56, 8, 0)
+
+    await tb.port_mac[0].rx.send(send_payload)
+
+    echo_tx_pkt = await tb.port_mac[0].tx.recv()
+
+    expected_op = 2
+    expected_val = 4096
     assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
     assert echo_tx_pkt.data[1:9] == expected_val.to_bytes(8, 'little')
 

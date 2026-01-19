@@ -118,6 +118,9 @@ module payload_to_dma #(
        payload_to_dma_out_tuser = 1'b0;
 
        payload_to_dma_in_tready = 1'b1;
+
+       dma_tx_length_valid = 1'b0;
+       dma_tx_length = 64'b0;
        
        case (state)
             IDLE: begin
@@ -154,7 +157,7 @@ module payload_to_dma #(
                 // On write completion, set the status of DMA register so that it can be polled by the CPU
                 dma_status_valid = (dma_d2h_count + KEEP_WIDTH >= dma_len);
                 dma_status = (dma_d2h_count + KEEP_WIDTH >= dma_len);
-                dma_tx_length_valid = payload_to_dma_in_tlast && payload_to_dma_in_tvalid;
+                dma_tx_length_valid = (dma_d2h_count + KEEP_WIDTH >= dma_len);
                 dma_tx_length = dma_d2h_count + KEEP_WIDTH;
             end
             RECEIVE_PAYLOAD: begin

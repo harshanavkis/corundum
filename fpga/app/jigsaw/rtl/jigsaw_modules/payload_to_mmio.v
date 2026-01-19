@@ -65,13 +65,9 @@ assign dma_len = slv_reg[DMA_LEN_REG];
 always @(posedge clk) begin
     if (rst) begin
         // Reset all registers
-        slv_reg[0] <= 64'b0;
-        slv_reg[1] <= 64'b0;
-        slv_reg[2] <= 64'b0;
-        slv_reg[3] <= 64'b0;
-        slv_reg[4] <= 64'b0;
-        slv_reg[5] <= 64'b0;
-        slv_reg[6] <= 64'b0;
+        for (int i = 0; i < NUM_REGS; i++) begin
+            slv_reg[i] <= 64'b0;
+        end
         read_data <= 64'b0;
         read_data_valid <= 1'b0;
         read_data_pending <= 64'b0;
@@ -121,6 +117,7 @@ always @(posedge clk) begin
                     64'h20: read_data <= {slv_reg[DMA_STATUS_REG], {8'd2}};
                     64'h28: read_data <= {slv_reg[START_COMPUTATION_REG], {8'd2}};
                     64'h30: read_data <= {slv_reg[CYCLES_PER_COMPUTATION_REG], {8'd2}};
+                    64'h38: read_data <= {slv_reg[DMA_TX_LEN_REG], {8'd2}};
                     default: read_data <= 72'b0;
                 endcase
                 read_data_valid <= 1'b1;
@@ -135,6 +132,7 @@ always @(posedge clk) begin
                 64'h20: read_data_pending <= {slv_reg[DMA_STATUS_REG], {8'd2}};
                 64'h28: read_data_pending <= {slv_reg[START_COMPUTATION_REG], {8'd2}};
                 64'h30: read_data_pending <= {slv_reg[CYCLES_PER_COMPUTATION_REG], {8'd2}};
+                64'h38: read_data_pending <= {slv_reg[DMA_TX_LEN_REG], {8'd2}};
                 default: read_data_pending <= 72'b0;
             endcase
             read_data_pending_valid <= 1'b1;
