@@ -225,7 +225,8 @@ always @(*) begin
     // DMA Read State Machine
     case (dma_rd_state_cur)
         DMA_IDLE: begin
-            if (network_in_tvalid && mmio_state_cur == MMIO_IDLE) begin
+            // Only check for DMA Read when DMA Write is NOT active (to prevent race with payload beats)
+            if (network_in_tvalid && mmio_state_cur == MMIO_IDLE && dma_wr_state_cur == DMA_IDLE) begin
                 if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd0) begin
                     if (!sq_valid_read) begin // Arbitration: Prioritize MMIO over DMA Read for SQ access
                         // Fix for combinatorial loop: Valid/Data generation should NOT depend on Ready

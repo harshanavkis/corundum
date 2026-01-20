@@ -801,6 +801,13 @@ async def run_test_nic(dut):
         # Verify received data length matches DMA length
         assert len(echo_tx_pkt.data) == dma_len, f"Expected {dma_len} bytes, got {len(echo_tx_pkt.data)}"
         
+        # Step 6: Read DMA_STATUS_REG to verify completion
+        tb.log.info("Reading DMA_STATUS_REG to verify completion...")
+        dma_status = await jigsaw_mmio_read(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x20)
+        tb.log.info(f"DMA_STATUS_REG: 0x{dma_status:x} (expected: 0x1)")
+        
+        assert dma_status == 1, f"Expected DMA_STATUS_REG=1, got 0x{dma_status:x}"
+        
         tb.log.info("D2H DMA test PASSED!")
         
         await RisingEdge(dut.clk)
