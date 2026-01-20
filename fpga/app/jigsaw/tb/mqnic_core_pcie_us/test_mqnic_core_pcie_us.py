@@ -809,6 +809,73 @@ async def run_test_nic(dut):
         assert dma_status == 1, f"Expected DMA_STATUS_REG=1, got 0x{dma_status:x}"
         
         tb.log.info("D2H DMA test PASSED!")
+
+        # ========================================
+        # Test 5: H2D DMA (Host to Device)
+        # ========================================
+        tb.log.info("=== Test 5: H2D DMA Transfer ===")
+        
+        # H2D DMA Register setup:
+        #   0x00 - DMA_CMD_REG (bit 0 = start, bit 1 = direction: 0=H2D, 1=D2H)
+        #   0x08 - DMA_SRC_ADDR_REG (source address on host for H2D)
+        #   0x18 - DMA_LEN_REG
+        
+        h2d_src_addr = 0x2000  # Source address on host
+        h2d_len = 512          # Transfer length in bytes
+        h2d_cmd = 0x01         # bit 0=1 (start), bit 1=0 (H2D direction)
+        
+        # Step 1: Write DMA source address
+        tb.log.info(f"Writing DMA_SRC_ADDR_REG = 0x{h2d_src_addr:x}")
+        await jigsaw_mmio_write(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x08, h2d_src_addr)
+        
+        # Step 2: Write DMA length
+        tb.log.info(f"Writing DMA_LEN_REG = {h2d_len}")
+        await jigsaw_mmio_write(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x18, h2d_len)
+        
+        # Step 3: Write DMA command to start transfer (H2D direction)
+        tb.log.info(f"Writing DMA_CMD_REG = 0x{h2d_cmd:x} (start H2D)")
+        await jigsaw_mmio_write(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x00, h2d_cmd)
+        
+        # Step 4: Wait for sq_valid_read to go high (DMA read from host)
+        tb.log.info("Waiting for H2D DMA sq_valid_read...")
+        while True:
+            sq_rd_valid = pkt_proc.sq_valid_read.value
+            if sq_rd_valid == 1:
+                sq_rd_addr = int(pkt_proc.sq_addr_read.value)
+                sq_rd_len = int(pkt_proc.sq_len_read.value)
+                break
+            await RisingEdge(dut.clk)
+        
+        tb.log.info(f"sq_valid_read went high")
+        tb.log.info(f"sq_addr_read: 0x{sq_rd_addr:x} (expected: 0x{h2d_src_addr:x})")
+        tb.log.info(f"sq_len_read: {sq_rd_len} (expected: {h2d_len})")
+        
+        # Verify SQ read values match DMA configuration
+        assert sq_rd_addr == h2d_src_addr, f"Expected sq_addr_read=0x{h2d_src_addr:x}, got 0x{sq_rd_addr:x}"
+        assert sq_rd_len == h2d_len, f"Expected sq_len_read={h2d_len}, got {sq_rd_len}"
+        
+        # Step 5: Send DMA read reply data via rx.send
+        # Note: jigsaw_host_side already sends op=2 to network_out first (line 237),
+        # so we just send the raw data without the opcode header
+        tb.log.info(f"Sending H2D DMA data ({h2d_len} bytes) via RX...")
+        
+        # Create test data pattern (incrementing bytes)
+        test_data = bytes([(i & 0xFF) for i in range(h2d_len)])
+        
+        await tb.port_mac[0].rx.send(test_data)
+        tb.log.info("H2D DMA data sent")
+        
+        # Wait for DMA to complete
+        await Timer(250, units='ns')
+        
+        # Step 6: Read DMA_STATUS_REG to verify completion
+        tb.log.info("Reading DMA_STATUS_REG to verify completion...")
+        h2d_dma_status = await jigsaw_mmio_read(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x20)
+        tb.log.info(f"DMA_STATUS_REG: 0x{h2d_dma_status:x} (expected: 0x1)")
+        
+        assert h2d_dma_status == 1, f"Expected DMA_STATUS_REG=1, got 0x{h2d_dma_status:x}"
+        
+        tb.log.info("H2D DMA test PASSED!")
         
         await RisingEdge(dut.clk)
         
