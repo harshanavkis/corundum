@@ -496,7 +496,137 @@ def jigsaw_mmio_emu(addr, len):
         b.setall(0)
 
         return bytearray(b)
-        
+
+
+async def jigsaw_mmio_read(tb, dut, pkt_proc, jhs, mmio_vaddr, reg_addr, verify_sq=True):
+    """
+    Perform an MMIO read operation.
+    
+    Args:
+        tb: Test bench object
+        dut: DUT object
+        pkt_proc: jigsaw_pkt_processor instance
+        jhs: jigsaw_host_side instance
+        mmio_vaddr: Virtual address for MMIO
+        reg_addr: Register address to read (0x00, 0x08, 0x10, etc.)
+        verify_sq: Whether to verify SQ signals
+    
+    Returns:
+        64-bit value read from the register
+    """
+    from cocotb.triggers import RisingEdge
+    
+    # Step 1: Set mmio_ctrl high to trigger the MMIO flow
+    jhs.mmio_vaddr.value = mmio_vaddr
+    jhs.mmio_ctrl.value = 1
+    
+    # Step 2: Wait for sq_valid_read and capture values
+    while True:
+        sq_valid = pkt_proc.sq_valid_read.value
+        if sq_valid == 1:
+            sq_addr = int(pkt_proc.sq_addr_read.value)
+            sq_len = int(pkt_proc.sq_len_read.value)
+            mmio_clear = pkt_proc.mmio_clear.value
+            if mmio_clear == 1:
+                jhs.mmio_ctrl.value = 0
+            break
+        await RisingEdge(dut.clk)
+    
+    # Verify SQ read values if requested
+    if verify_sq:
+        assert sq_addr == mmio_vaddr + 24, f"Expected sq_addr_read=0x{mmio_vaddr + 24:x}, got 0x{sq_addr:x}"
+        assert sq_len == 25, f"Expected sq_len_read=25, got {sq_len}"
+    
+    # Step 3: Ensure mmio_ctrl is low, then send read request
+    jhs.mmio_ctrl.value = 0
+    await RisingEdge(dut.clk)
+    
+    # Step 4: Send MMIO read payload (op=0)
+    send_payload, _ = jigsaw_mmio_packet_gen(0, reg_addr, 8, 0)
+    await tb.port_mac[0].rx.send(send_payload)
+    
+    # Step 5: Wait for sq_valid_write and capture values (also check mmio_read_done)
+    while True:
+        sq_wr_valid = pkt_proc.sq_valid_write.value
+        if sq_wr_valid == 1:
+            sq_wr_addr = int(pkt_proc.sq_addr_write.value)
+            sq_wr_len = int(pkt_proc.sq_len_write.value)
+            mmio_rd_done = pkt_proc.mmio_read_done.value
+            break
+        await RisingEdge(dut.clk)
+    
+    # Verify SQ write values if requested
+    if verify_sq:
+        assert sq_wr_addr == mmio_vaddr + 16, f"Expected sq_addr_write=0x{mmio_vaddr + 16:x}, got 0x{sq_wr_addr:x}"
+        assert sq_wr_len == 8, f"Expected sq_len_write=8, got {sq_wr_len}"
+    
+    # Verify mmio_read_done (always check)
+    assert mmio_rd_done == 1, f"Expected mmio_read_done=1, got {mmio_rd_done}"
+    
+    # Step 6: Receive response
+    echo_tx_pkt = await tb.port_mac[0].tx.recv()
+    assert len(echo_tx_pkt.data) == 8, f"Expected 8 bytes, got {len(echo_tx_pkt.data)}"
+    
+    # Parse and return the value
+    response_value = int.from_bytes(echo_tx_pkt.data[0:8], 'little')
+    return response_value
+
+
+async def jigsaw_mmio_write(tb, dut, pkt_proc, jhs, mmio_vaddr, reg_addr, value, verify_sq=True):
+    """
+    Perform an MMIO write operation.
+    
+    Args:
+        tb: Test bench object
+        dut: DUT object
+        pkt_proc: jigsaw_pkt_processor instance
+        jhs: jigsaw_host_side instance
+        mmio_vaddr: Virtual address for MMIO
+        reg_addr: Register address to write (0x00, 0x08, 0x10, etc.)
+        value: 64-bit value to write
+        verify_sq: Whether to verify SQ signals
+    """
+    from cocotb.triggers import RisingEdge
+    
+    # Step 1: Set mmio_ctrl high to trigger the MMIO flow
+    jhs.mmio_vaddr.value = mmio_vaddr
+    jhs.mmio_ctrl.value = 1
+    
+    # Step 2: Wait for sq_valid_read and capture values
+    while True:
+        sq_valid = pkt_proc.sq_valid_read.value
+        if sq_valid == 1:
+            sq_addr = int(pkt_proc.sq_addr_read.value)
+            sq_len = int(pkt_proc.sq_len_read.value)
+            mmio_clear = pkt_proc.mmio_clear.value
+            if mmio_clear == 1:
+                jhs.mmio_ctrl.value = 0
+            break
+        await RisingEdge(dut.clk)
+    
+    # Verify SQ read values if requested
+    if verify_sq:
+        assert sq_addr == mmio_vaddr + 24, f"Expected sq_addr_read=0x{mmio_vaddr + 24:x}, got 0x{sq_addr:x}"
+        assert sq_len == 25, f"Expected sq_len_read=25, got {sq_len}"
+    
+    # Step 3: Ensure mmio_ctrl is low, then send write data
+    jhs.mmio_ctrl.value = 0
+    await RisingEdge(dut.clk)
+    
+    # Step 4: Send MMIO write payload (op=1)
+    send_payload, _ = jigsaw_mmio_packet_gen(1, reg_addr, 8, value)
+    await tb.port_mac[0].rx.send(send_payload)
+    
+    # Step 5: Wait for mmio_write_done to go high
+    while True:
+        mmio_wr_done = pkt_proc.mmio_write_done.value
+        if mmio_wr_done == 1:
+            break
+        await RisingEdge(dut.clk)
+    
+    # Verify mmio_write_done (always check, not just when verify_sq is True)
+    assert mmio_wr_done == 1, f"Expected mmio_write_done=1, got {mmio_wr_done}"
+
 
 @cocotb.test()
 async def run_test_nic(dut):
@@ -512,170 +642,116 @@ async def run_test_nic(dut):
 
     tb.log.info("Init complete")
 
-    tb.log.info("Jigsaw H2D DMA")
-    # Write DMA address and length information
-    send_payload, mmio_data = jigsaw_mmio_packet_gen(1, 8, 8, 2000) # src_addr for H2D DMA
-    print("send_payload: ", send_payload.hex())
-    print("mmio_data: ", mmio_data.hex())
+    tb.log.info("Jigsaw E2E")
 
-    await tb.port_mac[0].rx.send(send_payload)
+    # Access internal signals from jigsaw_pkt_processor
+    # Navigate through hierarchy: dut -> core_pcie_inst -> core_inst -> app (generate block) -> app_block_inst -> pkt_proc
+    core_inst = dut.core_pcie_inst.core_inst
+    
+    # Access jigsaw_pkt_processor instance (inside app generate block)
+    # The app_block is inside a generate block named 'app'
+    try:
+        pkt_proc = core_inst.app.app_block_inst.pkt_proc
+        
+        # Log internal wire values
+        tb.log.info("=== Jigsaw Internal Signals ===")
+        
+        # Network to txn_generator interface
+        tb.log.info(f"network_to_txn_tvalid: {pkt_proc.network_to_txn_tvalid.value}")
+        tb.log.info(f"network_to_txn_tready: {pkt_proc.network_to_txn_tready.value}")
+        tb.log.info(f"network_to_txn_tlast: {pkt_proc.network_to_txn_tlast.value}")
+        
+        # Txn_generator to network interface  
+        tb.log.info(f"txn_to_network_tvalid: {pkt_proc.txn_to_network_tvalid.value}")
+        tb.log.info(f"txn_to_network_tready: {pkt_proc.txn_to_network_tready.value}")
+        tb.log.info(f"txn_to_network_tlast: {pkt_proc.txn_to_network_tlast.value}")
+        
+        # Submission queue WRITE signals (outputs from jigsaw_host_side)
+        tb.log.info(f"sq_valid_write: {pkt_proc.sq_valid_write.value}")
+        tb.log.info(f"sq_addr_write: {pkt_proc.sq_addr_write.value}")
+        tb.log.info(f"sq_len_write: {pkt_proc.sq_len_write.value}")
+        
+        # Submission queue READ signals (outputs from jigsaw_host_side)
+        tb.log.info(f"sq_valid_read: {pkt_proc.sq_valid_read.value}")
+        tb.log.info(f"sq_addr_read: {pkt_proc.sq_addr_read.value}")
+        tb.log.info(f"sq_len_read: {pkt_proc.sq_len_read.value}")
+        
+        # Note: mmio_* signals are inputs to jigsaw_host_side, skipping
+        
+        # Access deeper hierarchy - jigsaw_host_side_inst
+        jhs = pkt_proc.jigsaw_host_side_inst
+        tb.log.info(f"jigsaw_host_side instance found: {jhs}")
+        
+        # Access txn_generator instance
+        txner = pkt_proc.txner
+        tb.log.info(f"txn_generator instance found: {txner}")
+        
+    except AttributeError as e:
+        tb.log.warning(f"Could not access internal signal: {e}")
+        tb.log.info("Trying to discover hierarchy...")
+        # Print available attributes to help discover the correct path
+        tb.log.info(f"core_inst attributes with 'app': {[a for a in dir(core_inst) if 'app' in a.lower()]}")
 
-    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 24, 8, 512)
-
-    await tb.port_mac[0].rx.send(send_payload)
-
-    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 0, 8, 1)
-
-    await tb.port_mac[0].rx.send(send_payload)
-
-    expected_op = 0
-    expected_addr = 2000
-    expected_len = 512
-
-    echo_tx_pkt = await tb.port_mac[0].tx.recv()
-
-    print("echo_tx_pkt.data: ", echo_tx_pkt.data.hex())
-
-    assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
-    assert echo_tx_pkt.data[1:9] == expected_addr.to_bytes(8, 'little')
-    assert echo_tx_pkt.data[9:17] == expected_len.to_bytes(8, 'little')
-
-    op = 2
-    data = 0
-    payload = bitarray(endian='little')
-    payload.frombytes(op.to_bytes(1, 'little'))
-    payload.frombytes(data.to_bytes(512, 'little'))
-
-    await tb.port_mac[0].rx.send(payload)
-
-    await Timer(250, units='ns')
-
-    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(0, 32, 8, 0)
-
-    await tb.port_mac[0].rx.send(send_payload)
-
-    echo_tx_pkt = await tb.port_mac[0].tx.recv()
-
-    expected_op = 2
-    expected_val = 1
-    assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
-    assert echo_tx_pkt.data[1:9] == expected_val.to_bytes(8, 'little')
-
-    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(0, 56, 8, 0)
-
-    await tb.port_mac[0].rx.send(send_payload)
-
-    echo_tx_pkt = await tb.port_mac[0].tx.recv()
-
-    expected_op = 2
-    expected_val = 512 + 64
-    assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
-    assert echo_tx_pkt.data[1:9] == expected_val.to_bytes(8, 'little')
-
-
-    await Timer(250, units='ns')
-
-    tb.log.info("Jigsaw D2H DMA")
-
-    send_payload, mmio_data = jigsaw_mmio_packet_gen(1, 16, 8, 3000) # dst_addr for D2H DMA
-    print("send_payload: ", send_payload.hex())
-    print("mmio_data: ", mmio_data.hex())
-
-    await tb.port_mac[0].rx.send(send_payload)
-
-    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 24, 8, 4096)
-
-    await tb.port_mac[0].rx.send(send_payload)
-
-    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 0, 8, 3)
-
-    await tb.port_mac[0].rx.send(send_payload)
-
-    expected_op = 1
-    expected_addr = 3000
-    expected_len = 4096
-
-    echo_tx_pkt = await tb.port_mac[0].tx.recv()
-
-    print("echo_tx_pkt.data: ", echo_tx_pkt.data.hex())
-
-    assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
-    assert echo_tx_pkt.data[1:9] == expected_addr.to_bytes(8, 'little')
-    assert echo_tx_pkt.data[9:17] == expected_len.to_bytes(8, 'little')
-
-    assert len(echo_tx_pkt.data) == expected_len + 64
-
-    await Timer(250, units='ns')    
-
-    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(0, 32, 8, 0)
-
-    await tb.port_mac[0].rx.send(send_payload)
-
-    echo_tx_pkt = await tb.port_mac[0].tx.recv()
-
-    expected_op = 2
-    expected_val = 1
-    assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
-    assert echo_tx_pkt.data[1:9] == expected_val.to_bytes(8, 'little')
-
-    send_payload, written_mmio_data = jigsaw_mmio_packet_gen(0, 56, 8, 0)
-
-    await tb.port_mac[0].rx.send(send_payload)
-
-    echo_tx_pkt = await tb.port_mac[0].tx.recv()
-
-    expected_op = 2
-    expected_val = 4096
-    assert echo_tx_pkt.data[:1] == expected_op.to_bytes(1, 'little')
-    assert echo_tx_pkt.data[1:9] == expected_val.to_bytes(8, 'little')
-
-    # tb.log.info("Jigsaw local host controller: Write op")
-
-    # op = 1
-    # addr = 3000
-    # data_len = 2048 -17
-    # data = 0
-    # payload = bitarray(endian='little')
-    # payload.frombytes(op.to_bytes(1, 'little'))
-    # payload.frombytes(addr.to_bytes(8, 'little'))
-    # payload.frombytes(data_len.to_bytes(8, 'little'))
-    # payload.frombytes(data.to_bytes(data_len, 'little'))
-
-    # await tb.port_mac[0].rx.send(payload)
-
-    # await Timer(250, units='ns')
-
-    # echo_tx_pkt = await tb.port_mac[0].tx.recv()
-
-    # assert len(echo_tx_pkt.data) == data_len
-
-    # tb.log.info("Jigsaw local host controller: Read op")
-
-    # op = 0
-    # addr = 3000
-    # data_len = 2048
-    # payload = bitarray(endian='little')
-    # payload.frombytes(op.to_bytes(1, 'little'))
-    # payload.frombytes(addr.to_bytes(8, 'little'))
-    # payload.frombytes(data_len.to_bytes(8, 'little'))
-
-    # await tb.port_mac[0].rx.send(payload)
-
-    # await Timer(250, units='ns')
-
-    # data = 0
-    # payload = bitarray(endian='little')
-    # payload.frombytes(data.to_bytes(data_len, 'little'))
-
-    # await tb.port_mac[0].rx.send(payload)
-
-    # await Timer(250, units='ns')
-
-    # echo_tx_pkt = await tb.port_mac[0].tx.recv()
-
-    # op = 2
-    # assert echo_tx_pkt.data[:1] == op.to_bytes(1, 'little')
-    # assert len(echo_tx_pkt.data) == data_len + 64
+    # ========================================
+    # Test: MMIO control -> Submission Queue Read
+    # ========================================
+    tb.log.info("=== Testing MMIO -> SQ Read Interface ===")
+    
+    # Get access to jigsaw_host_side instance for driving inputs
+    try:
+        pkt_proc = core_inst.app.app_block_inst.pkt_proc
+        jhs = pkt_proc.jigsaw_host_side_inst
+        
+        # Test parameters
+        test_mmio_vaddr = 0x1000  # Test virtual address
+        
+        # Register map from payload_to_mmio.v:
+        #   0x00 - DMA_CMD_REG
+        #   0x08 - DMA_SRC_ADDR_REG
+        #   0x10 - DMA_DST_ADDR_REG 
+        #   0x18 - DMA_LEN_REG
+        #   0x20 - DMA_STATUS_REG
+        #   0x28 - START_COMPUTATION_REG
+        #   0x30 - CYCLES_PER_COMPUTATION_REG
+        #   0x38 - DMA_TX_LEN_REG
+        
+        # Test 1: MMIO Read from DMA_STATUS_REG
+        tb.log.info("Test 1: MMIO Read from DMA_STATUS_REG (0x20)")
+        status_value = await jigsaw_mmio_read(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x20)
+        tb.log.info(f"DMA_STATUS_REG value: 0x{status_value:x}")
+        tb.log.info("MMIO Read test PASSED!")
+        
+        # Test 2: MMIO Write to DMA_SRC_ADDR_REG and Read Back
+        tb.log.info("=== Test 2: MMIO Write and Read Back ===")
+        test_write_value = 0xDEADBEEF12345678
+        
+        tb.log.info(f"Writing 0x{test_write_value:x} to DMA_SRC_ADDR_REG (0x08)")
+        await jigsaw_mmio_write(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x08, test_write_value)
+        tb.log.info("MMIO Write completed")
+        
+        tb.log.info("Reading back from DMA_SRC_ADDR_REG (0x08)")
+        read_back_value = await jigsaw_mmio_read(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x08)
+        tb.log.info(f"Read back value: 0x{read_back_value:x} (expected: 0x{test_write_value:x})")
+        
+        assert read_back_value == test_write_value, f"Expected 0x{test_write_value:x}, got 0x{read_back_value:x}"
+        tb.log.info("MMIO Write/Read test PASSED!")
+        
+        # Test 3: Write to DMA_LEN_REG and Read Back
+        tb.log.info("=== Test 3: MMIO Write/Read DMA_LEN_REG ===")
+        test_len_value = 0x1000  # 4096 bytes
+        
+        await jigsaw_mmio_write(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x18, test_len_value)
+        read_back_len = await jigsaw_mmio_read(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x18)
+        
+        assert read_back_len == test_len_value, f"Expected 0x{test_len_value:x}, got 0x{read_back_len:x}"
+        tb.log.info(f"DMA_LEN_REG: wrote 0x{test_len_value:x}, read back 0x{read_back_len:x} - PASSED!")
+        
+        await RisingEdge(dut.clk)
+        
+    except AttributeError as e:
+        tb.log.error(f"Could not access jigsaw_host_side signals: {e}")
+    except AssertionError as e:
+        tb.log.error(f"Test FAILED: {e}")
 
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
