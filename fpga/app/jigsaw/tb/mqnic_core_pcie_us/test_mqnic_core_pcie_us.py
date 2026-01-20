@@ -746,6 +746,63 @@ async def run_test_nic(dut):
         assert read_back_len == test_len_value, f"Expected 0x{test_len_value:x}, got 0x{read_back_len:x}"
         tb.log.info(f"DMA_LEN_REG: wrote 0x{test_len_value:x}, read back 0x{read_back_len:x} - PASSED!")
         
+        # ========================================
+        # Test 4: D2H DMA (Device to Host)
+        # ========================================
+        tb.log.info("=== Test 4: D2H DMA Transfer ===")
+        
+        # DMA Register map from payload_to_mmio.v:
+        #   0x00 - DMA_CMD_REG (bit 0 = start, bit 1 = direction: 0=H2D, 1=D2H)
+        #   0x08 - DMA_SRC_ADDR_REG
+        #   0x10 - DMA_DST_ADDR_REG
+        #   0x18 - DMA_LEN_REG
+        
+        dma_dst_addr = 0x3000  # Destination address on host
+        dma_len = 512          # Transfer length in bytes
+        dma_cmd = 0x03         # bit 0=1 (start), bit 1=1 (D2H direction)
+        
+        # Step 1: Write DMA destination address
+        tb.log.info(f"Writing DMA_DST_ADDR_REG = 0x{dma_dst_addr:x}")
+        await jigsaw_mmio_write(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x10, dma_dst_addr)
+        
+        # Step 2: Write DMA length
+        tb.log.info(f"Writing DMA_LEN_REG = {dma_len}")
+        await jigsaw_mmio_write(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x18, dma_len)
+        
+        # Step 3: Write DMA command to start transfer (D2H direction)
+        tb.log.info(f"Writing DMA_CMD_REG = 0x{dma_cmd:x} (start D2H)")
+        await jigsaw_mmio_write(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x00, dma_cmd)
+        
+        # Step 4: Wait for sq_valid_write to go high (DMA write to host)
+        tb.log.info("Waiting for D2H DMA sq_valid_write...")
+        while True:
+            sq_wr_valid = pkt_proc.sq_valid_write.value
+            if sq_wr_valid == 1:
+                sq_wr_addr = int(pkt_proc.sq_addr_write.value)
+                sq_wr_len = int(pkt_proc.sq_len_write.value)
+                break
+            await RisingEdge(dut.clk)
+        
+        tb.log.info(f"sq_valid_write went high")
+        tb.log.info(f"sq_addr_write: 0x{sq_wr_addr:x} (expected: 0x{dma_dst_addr:x})")
+        tb.log.info(f"sq_len_write: {sq_wr_len} (expected: {dma_len})")
+        
+        # Verify SQ write values match DMA configuration
+        assert sq_wr_addr == dma_dst_addr, f"Expected sq_addr_write=0x{dma_dst_addr:x}, got 0x{sq_wr_addr:x}"
+        assert sq_wr_len == dma_len, f"Expected sq_len_write={dma_len}, got {sq_wr_len}"
+        
+        # Step 5: Receive the DMA data via tx.recv
+        tb.log.info("Waiting for D2H DMA data via TX...")
+        echo_tx_pkt = await tb.port_mac[0].tx.recv()
+        
+        tb.log.info(f"Received D2H DMA packet, length: {len(echo_tx_pkt.data)}")
+        tb.log.info(f"D2H DMA data (first 32 bytes hex): {echo_tx_pkt.data[:32].hex()}")
+        
+        # Verify received data length matches DMA length
+        assert len(echo_tx_pkt.data) == dma_len, f"Expected {dma_len} bytes, got {len(echo_tx_pkt.data)}"
+        
+        tb.log.info("D2H DMA test PASSED!")
+        
         await RisingEdge(dut.clk)
         
     except AttributeError as e:

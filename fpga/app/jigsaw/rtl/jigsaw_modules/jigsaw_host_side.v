@@ -180,20 +180,18 @@ always @(*) begin
         DMA_IDLE: begin
             if (network_in_tvalid && host_out_tready) begin
                 if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd1) begin
-                    // Priority check: Don't start DMA write if MMIO is active? 
-                    // Actually, network_in is shared. If it's a DMA write op, handle it.
+                    // D2H DMA: First beat is header only (op + addr + len)
+                    // payload_to_dma sends header and payload in separate beats
+                    // Capture header info but don't send data from this beat
                     dma_wr_state_next = DMA_WR;
                     sq_valid_write = 1'b1;
                     sq_dir_write = 1'b1;
                     sq_addr_write = network_in_tdata[ADDR_POS +: ADDR_WIDTH];
                     sq_len_write = network_in_tdata[LEN_POS +: LEN_WIDTH];
-
-                    host_out_tvalid = 1'b1;
-
-                    // TODO: This assumes that header and data is in the same packet, but payload_to_dma
-                    // sends header and payload in separate packets, this must be changed
-                    host_out_tdata = network_in_tdata >> DATA_POS;
-                    host_out_tkeep = network_in_tkeep >> (DATA_POS / 8);
+                    
+                    // Don't send data from header beat - wait for payload beats
+                    // This beat is consumed (network_in_tready will be high)
+                    // but we don't output anything to host_out
                 end else if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd2) begin
                     // This is a MMIO Response from network_in
                     sq_valid_write = 1'b1;
@@ -210,6 +208,7 @@ always @(*) begin
             end
         end
         DMA_WR: begin
+            // Pass through payload beats directly to host_out
             if (network_in_tvalid && host_out_tready) begin
                 host_out_tvalid = 1'b1;
                 host_out_tdata = network_in_tdata;
