@@ -147,7 +147,7 @@ always @(*) begin
     // MMIO State Machine
     case (mmio_state_cur)
         MMIO_IDLE: begin
-            if (mmio_ctrl_reg && dma_rd_state_cur == DMA_IDLE) begin
+            if (mmio_ctrl_reg && dma_rd_state_cur == DMA_IDLE && dma_wr_state_cur == DMA_IDLE) begin
                 mmio_state_next = MMIO_ACTIVE;
                 mmio_clear = 1'b1;
                 sq_valid_read = 1'b1;
@@ -183,7 +183,8 @@ always @(*) begin
     // DMA Write State Machine
     case (dma_wr_state_cur)
         DMA_IDLE: begin
-            if (network_in_tvalid && host_out_tready) begin
+            // Check MMIO is not active AND not pending (mmio_ctrl_reg) to prevent race
+            if (network_in_tvalid && host_out_tready && mmio_state_cur == MMIO_IDLE && !mmio_ctrl_reg) begin
                 if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd1) begin
                     // D2H DMA: First beat is header only (op + addr + len)
                     // payload_to_dma sends header and payload in separate beats
@@ -230,8 +231,10 @@ always @(*) begin
     // DMA Read State Machine
     case (dma_rd_state_cur)
         DMA_IDLE: begin
-            // Only check for DMA Read when DMA Write is NOT active (to prevent race with payload beats)
-            if (network_in_tvalid && mmio_state_cur == MMIO_IDLE && dma_wr_state_cur == DMA_IDLE) begin
+            // Only check for DMA Read when:
+            // - DMA Write is NOT active (to prevent race with payload beats)
+            // - MMIO is not active AND not pending (mmio_ctrl_reg) to prevent overlap
+            if (network_in_tvalid && mmio_state_cur == MMIO_IDLE && !mmio_ctrl_reg && dma_wr_state_cur == DMA_IDLE) begin
                 if (network_in_tdata[OP_POS +: OP_WIDTH] == 8'd0) begin
                     if (!sq_valid_read) begin // Arbitration: Prioritize MMIO over DMA Read for SQ access
                         // Fix for combinatorial loop: Valid/Data generation should NOT depend on Ready
@@ -291,11 +294,16 @@ always_comb begin
         network_in_tready = host_out_tready;
     end else if (dma_wr_state_cur == DMA_IDLE && dma_rd_state_cur == DMA_IDLE) begin
         // We are in IDLE, looking for a new command
-        case (network_in_tdata[OP_POS +: OP_WIDTH])
-            8'd0:    network_in_tready = network_out_tready && mmio_state_cur == MMIO_IDLE; // DMA Read needs network_out
-            8'd1, 8'd2: network_in_tready = host_out_tready; // DMA Write / MMIO Resp need host_out
-            default: network_in_tready = 1'b0;
-        endcase
+        // Block if MMIO is active OR pending (mmio_ctrl_reg) to prevent overlap
+        if (mmio_state_cur != MMIO_IDLE || mmio_ctrl_reg) begin
+            network_in_tready = 1'b0;
+        end else begin
+            case (network_in_tdata[OP_POS +: OP_WIDTH])
+                8'd0:    network_in_tready = network_out_tready; // DMA Read needs network_out
+                8'd1, 8'd2: network_in_tready = host_out_tready; // DMA Write / MMIO Resp need host_out
+                default: network_in_tready = 1'b0;
+            endcase
+        end
     end else begin
         network_in_tready = 1'b0;
     end

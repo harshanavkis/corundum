@@ -15,6 +15,11 @@ module payload_to_dma #(
     output reg dma_status_valid,
     output reg clear_dma_start,
 
+    // MMIO arbitration: block DMA output when MMIO response is being sent
+    input wire mmio_output_active,
+    // Indicates DMA wants to output (in SEND_HEADER or SEND_PAYLOAD state)
+    output wire dma_output_active,
+
     input wire [AXI_DATA_WIDTH-1:0] payload_to_dma_in_tdata,
     input wire [KEEP_WIDTH-1:0] payload_to_dma_in_tkeep,
     input wire payload_to_dma_in_tvalid,
@@ -49,6 +54,9 @@ module payload_to_dma #(
     reg [7:0] h2d;
     reg [63:0] dma_d2h_count;
 
+    // DMA is active when in output states (SEND_HEADER or SEND_PAYLOAD)
+    assign dma_output_active = (state == SEND_HEADER) || (state == SEND_PAYLOAD);
+
     always @(posedge clk)
     begin
         if (rst)
@@ -67,9 +75,14 @@ module payload_to_dma #(
                 else
                     next_state = IDLE;
             CLEAR_DMA_REG:
-                next_state = SEND_HEADER;
+                // Only transition to SEND_HEADER when MMIO is not active
+                if (!mmio_output_active)
+                    next_state = SEND_HEADER;
+                else
+                    next_state = CLEAR_DMA_REG;
             SEND_HEADER:
-                if (payload_to_dma_out_tready) begin
+                // Only transition when MMIO is not active AND downstream is ready
+                if (!mmio_output_active && payload_to_dma_out_tready) begin
                     if (h2d)
                         next_state = SEND_PAYLOAD;
                     else
@@ -77,7 +90,8 @@ module payload_to_dma #(
                 end else
                     next_state = SEND_HEADER;
             SEND_PAYLOAD:
-                if (payload_to_dma_out_tready && (dma_d2h_count + KEEP_WIDTH >= dma_len))
+                // Only transition when MMIO is not active AND downstream is ready
+                if (!mmio_output_active && payload_to_dma_out_tready && (dma_d2h_count + KEEP_WIDTH >= dma_len))
                     next_state = IDLE;
                 else
                     next_state = SEND_PAYLOAD;
@@ -143,7 +157,8 @@ module payload_to_dma #(
                     payload_to_dma_out_tlast = 1'b1; // Read has no payload
                     payload_to_dma_out_tkeep = {{(KEEP_WIDTH - 17){1'b0}}, {17{1'b1}}};
                 end
-                payload_to_dma_out_tvalid = 1'b1;
+                // Gate output by MMIO not being active - prevent overlapping tvalid
+                payload_to_dma_out_tvalid = !mmio_output_active;
             end
 
             SEND_PAYLOAD: begin
@@ -151,7 +166,8 @@ module payload_to_dma #(
                 // TODO: Check if we need to use payload_to_dma_out_tready while triggering payload_to_dma_out_tvalid
                 payload_to_dma_out_tdata = {AXI_DATA_WIDTH{1'b0}};
                 payload_to_dma_out_tkeep = {KEEP_WIDTH{1'b1}};
-                payload_to_dma_out_tvalid = 1'b1;
+                // Gate output by MMIO not being active - prevent overlapping tvalid
+                payload_to_dma_out_tvalid = !mmio_output_active;
                 payload_to_dma_out_tlast = (dma_d2h_count + KEEP_WIDTH >= dma_len);
 
                 // On write completion, set the status of DMA register so that it can be polled by the CPU

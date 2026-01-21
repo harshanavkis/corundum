@@ -547,13 +547,14 @@ async def jigsaw_mmio_read(tb, dut, pkt_proc, jhs, mmio_vaddr, reg_addr, verify_
     send_payload, _ = jigsaw_mmio_packet_gen(0, reg_addr, 8, 0)
     await tb.port_mac[0].rx.send(send_payload)
     
-    # Step 5: Wait for sq_valid_write and capture values (also check mmio_read_done)
+    # Step 5: Wait for mmio_read_done to go high (loop until MMIO read completes)
+    # This properly distinguishes MMIO completion from DMA sq_valid_write during concurrent access
     while True:
-        sq_wr_valid = pkt_proc.sq_valid_write.value
-        if sq_wr_valid == 1:
+        mmio_rd_done = pkt_proc.mmio_read_done.value
+        if mmio_rd_done == 1:
+            # Capture SQ values when mmio_read_done is high
             sq_wr_addr = int(pkt_proc.sq_addr_write.value)
             sq_wr_len = int(pkt_proc.sq_len_write.value)
-            mmio_rd_done = pkt_proc.mmio_read_done.value
             break
         await RisingEdge(dut.clk)
     
@@ -561,9 +562,6 @@ async def jigsaw_mmio_read(tb, dut, pkt_proc, jhs, mmio_vaddr, reg_addr, verify_
     if verify_sq:
         assert sq_wr_addr == mmio_vaddr + 16, f"Expected sq_addr_write=0x{mmio_vaddr + 16:x}, got 0x{sq_wr_addr:x}"
         assert sq_wr_len == 8, f"Expected sq_len_write=8, got {sq_wr_len}"
-    
-    # Verify mmio_read_done (always check)
-    assert mmio_rd_done == 1, f"Expected mmio_read_done=1, got {mmio_rd_done}"
     
     # Step 6: Receive response
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
@@ -777,7 +775,35 @@ async def run_test_nic(dut):
         tb.log.info(f"Writing DMA_CMD_REG = 0x{dma_cmd:x} (start D2H)")
         await jigsaw_mmio_write(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x00, dma_cmd)
         
-        # Step 4: Wait for sq_valid_write to go high (DMA write to host)
+        # Create a result holder for the status check
+        status_result = {'value': None, 'done': False, 'poll_count': 0}
+        
+        async def check_status_reg():
+            """Concurrent task to poll DMA_STATUS_REG until status == 1"""
+            tb.log.info("Starting concurrent DMA_STATUS_REG polling loop...")
+            poll_count = 0
+            
+            while True:
+                poll_count += 1
+                # Use verify_sq=False because during concurrent execution, we can't
+                # distinguish between DMA and MMIO sq_valid_write signals
+                status = await jigsaw_mmio_read(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x20, verify_sq=False)
+                tb.log.info(f"Poll #{poll_count}: DMA_STATUS_REG = 0x{status:x}")
+                
+                if status == 1:
+                    status_result['value'] = status
+                    status_result['done'] = True
+                    status_result['poll_count'] = poll_count
+                    tb.log.info(f"Concurrent status check complete after {poll_count} polls: DMA_STATUS_REG = 0x{status:x}")
+                    return
+                
+                # Small delay between polls
+                await RisingEdge(dut.clk)
+        
+        # Step 4: Start status register check concurrently with DMA operation
+        status_task = cocotb.start_soon(check_status_reg())
+        
+        # Step 5: Wait for sq_valid_write to go high (DMA write to host)
         tb.log.info("Waiting for D2H DMA sq_valid_write...")
         while True:
             sq_wr_valid = pkt_proc.sq_valid_write.value
@@ -795,7 +821,7 @@ async def run_test_nic(dut):
         assert sq_wr_addr == dma_dst_addr, f"Expected sq_addr_write=0x{dma_dst_addr:x}, got 0x{sq_wr_addr:x}"
         assert sq_wr_len == dma_len, f"Expected sq_len_write={dma_len}, got {sq_wr_len}"
         
-        # Step 5: Receive the DMA data via tx.recv
+        # Step 6: Receive the DMA data via tx.recv
         tb.log.info("Waiting for D2H DMA data via TX...")
         echo_tx_pkt = await tb.port_mac[0].tx.recv()
         
@@ -805,9 +831,10 @@ async def run_test_nic(dut):
         # Verify received data length matches DMA length
         assert len(echo_tx_pkt.data) == dma_len, f"Expected {dma_len} bytes, got {len(echo_tx_pkt.data)}"
         
-        # Step 6: Read DMA_STATUS_REG to verify completion
-        tb.log.info("Reading DMA_STATUS_REG to verify completion...")
-        dma_status = await jigsaw_mmio_read(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x20)
+        # Step 7: Wait for concurrent status check to complete
+        tb.log.info("Waiting for concurrent status check to complete...")
+        await status_task
+        dma_status = status_result['value']
         tb.log.info(f"DMA_STATUS_REG: 0x{dma_status:x} (expected: 0x1)")
         
         assert dma_status == 1, f"Expected DMA_STATUS_REG=1, got 0x{dma_status:x}"

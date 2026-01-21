@@ -47,6 +47,22 @@ module txn_generator #(
 
     Payload data for DMA:
         - Variable size depending on DMA'ed data
+
+    Output Arbitration Logic (MMIO vs DMA mutual exclusion):
+    +-------------------------------------------+-------------------------+-------------------------------+
+    | Scenario                                  | MMIO                    | DMA                           |
+    +-------------------------------------------+-------------------------+-------------------------------+
+    | MMIO response pending, DMA idle           | Sends response          | Waits                         |
+    | DMA in output state, MMIO pending         | Waits (ready blocked)   | Stays in state, tvalid low    |
+    | DMA wants to start, MMIO active           | n/a                     | Stays in CLEAR_DMA_REG        |
+    | Neither active                            | First to start wins     | First to start wins           |
+    +-------------------------------------------+-------------------------+-------------------------------+
+    
+    Signals used:
+        - mmio_read_valid (mmio_output_active): MMIO has response to send
+        - dma_output_active: DMA is in SEND_HEADER or SEND_PAYLOAD state
+        - read_data_ready: gated by ~dma_output_active (blocks MMIO when DMA outputting)
+        - payload_to_dma_out_tvalid: gated by ~mmio_output_active (blocks DMA when MMIO outputting)
     */
 
     localparam OP_POS = 0;
@@ -98,6 +114,7 @@ module txn_generator #(
     wire dma_status;
     wire dma_status_valid;
     wire clear_dma_start;
+    wire dma_output_active;  // Indicates DMA is in output state (SEND_HEADER or SEND_PAYLOAD)
 
     wire [63:0] dma_tx_len;
     wire dma_tx_len_valid;
@@ -235,7 +252,8 @@ module txn_generator #(
         .payload_ready(mmio_ready),
         .read_data(mmio_read_data),
         .read_data_valid(mmio_read_valid),
-        .read_data_ready(txn_generator_out_tready & ~payload_to_dma_out_tvalid),
+        .read_data_ready(txn_generator_out_tready & ~dma_output_active),  // Block MMIO output when DMA is in output state
+        .dma_output_active(dma_output_active),  // Prevent MMIO from asserting read_data_valid while DMA is outputting
         .dma_start(dma_start),
         .dma_direction(dma_direction),
         .dma_src_addr(dma_src_addr),
@@ -262,6 +280,8 @@ module txn_generator #(
         .dma_status(dma_status),
         .dma_status_valid(dma_status_valid),
         .clear_dma_start(clear_dma_start),
+        .mmio_output_active(mmio_read_valid),  // Gate DMA output when MMIO response is active
+        .dma_output_active(dma_output_active), // DMA wants to output (in SEND_HEADER or SEND_PAYLOAD)
         .payload_to_dma_in_tdata(dma_fifo_out_tdata),
         .payload_to_dma_in_tkeep(dma_fifo_out_tkeep),
         .payload_to_dma_in_tvalid(dma_fifo_out_tvalid),

@@ -9,6 +9,8 @@ module payload_to_mmio (
     output reg [71:0] read_data,
     output reg read_data_valid,
     input wire read_data_ready,
+    // DMA arbitration: block MMIO output when DMA is in output state
+    input wire dma_output_active,
     output reg dma_start,
     output reg dma_direction,
     output reg [63:0] dma_src_addr,
@@ -100,8 +102,9 @@ always @(posedge clk) begin
         end
         
         // Check if we can output pending data or new data
-        if (!read_data_valid || read_data_ready) begin
-            // Output path is available
+        // Gate by dma_output_active to prevent MMIO from outputting while DMA is active
+        if ((!read_data_valid || read_data_ready) && !dma_output_active) begin
+            // Output path is available and DMA is not outputting
             if (read_data_pending_valid) begin
                 // Output pending data
                 read_data <= read_data_pending;
