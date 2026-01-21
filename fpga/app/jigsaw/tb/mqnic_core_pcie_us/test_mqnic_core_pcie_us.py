@@ -874,6 +874,31 @@ async def run_test_nic(dut):
         tb.log.info(f"Writing DMA_CMD_REG = 0x{h2d_cmd:x} (start H2D)")
         await jigsaw_mmio_write(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x00, h2d_cmd)
         
+        # Create result holder for concurrent status check
+        h2d_status_result = {'value': None, 'done': False, 'poll_count': 0}
+        
+        async def h2d_check_status_reg():
+            """Concurrent task to poll DMA_STATUS_REG until status == 1 for H2D"""
+            tb.log.info("Starting concurrent H2D DMA_STATUS_REG polling loop...")
+            poll_count = 0
+            
+            while True:
+                poll_count += 1
+                # Use verify_sq=False because during concurrent execution, we can't
+                # distinguish between DMA and MMIO sq_valid_write signals
+                status = await jigsaw_mmio_read(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x20, verify_sq=False)
+                tb.log.info(f"H2D Poll #{poll_count}: DMA_STATUS_REG = 0x{status:x}")
+                
+                if status == 1:
+                    h2d_status_result['value'] = status
+                    h2d_status_result['done'] = True
+                    h2d_status_result['poll_count'] = poll_count
+                    tb.log.info(f"H2D concurrent status check complete after {poll_count} polls: DMA_STATUS_REG = 0x{status:x}")
+                    return
+                
+                # Small delay between polls
+                await RisingEdge(dut.clk)
+        
         # Step 4: Wait for sq_valid_read to go high (DMA read from host)
         tb.log.info("Waiting for H2D DMA sq_valid_read...")
         while True:
@@ -892,7 +917,11 @@ async def run_test_nic(dut):
         assert sq_rd_addr == h2d_src_addr, f"Expected sq_addr_read=0x{h2d_src_addr:x}, got 0x{sq_rd_addr:x}"
         assert sq_rd_len == h2d_len, f"Expected sq_len_read={h2d_len}, got {sq_rd_len}"
         
-        # Step 5: Send DMA read reply data via rx.send
+        # Step 5: Start concurrent status polling now that DMA is in progress
+        tb.log.info("Starting concurrent status polling now that H2D DMA is in progress...")
+        h2d_status_task = cocotb.start_soon(h2d_check_status_reg())
+        
+        # Step 6: Send DMA read reply data via rx.send
         # Note: jigsaw_host_side already sends op=2 to network_out first (line 237),
         # so we just send the raw data without the opcode header
         tb.log.info(f"Sending H2D DMA data ({h2d_len} bytes) via RX...")
@@ -903,14 +932,15 @@ async def run_test_nic(dut):
         await tb.port_mac[0].rx.send(test_data)
         tb.log.info("H2D DMA data sent")
         
-        # Step 6: Read DMA_STATUS_REG to verify completion
-        tb.log.info("Reading DMA_STATUS_REG to verify completion...")
-        h2d_dma_status = await jigsaw_mmio_read(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x20)
+        # Step 7: Wait for concurrent status check to complete
+        tb.log.info("Waiting for H2D concurrent status check to complete...")
+        await h2d_status_task
+        h2d_dma_status = h2d_status_result['value']
         tb.log.info(f"DMA_STATUS_REG: 0x{h2d_dma_status:x} (expected: 0x1)")
         
         assert h2d_dma_status == 1, f"Expected DMA_STATUS_REG=1, got 0x{h2d_dma_status:x}"
 
-        # Step 7: Read DMA_TX_LEN_REG to verify bytes transferred
+        # Step 8: Read DMA_TX_LEN_REG to verify bytes transferred
         tb.log.info("Reading DMA_TX_LEN_REG to verify transfer length...")
         h2d_tx_len = await jigsaw_mmio_read(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x38)
         tb.log.info(f"DMA_TX_LEN_REG: {h2d_tx_len} (expected: {h2d_len})")
