@@ -519,6 +519,8 @@ async def jigsaw_mmio_read(tb, dut, pkt_proc, jhs, mmio_vaddr, reg_addr, verify_
     # Step 1: Set mmio_ctrl high to trigger the MMIO flow
     jhs.mmio_vaddr.value = mmio_vaddr
     jhs.mmio_ctrl.value = 1
+
+    await RisingEdge(dut.clk)
     
     # Step 2: Wait for sq_valid_read and capture values
     while True:
@@ -591,6 +593,8 @@ async def jigsaw_mmio_write(tb, dut, pkt_proc, jhs, mmio_vaddr, reg_addr, value,
     # Step 1: Set mmio_ctrl high to trigger the MMIO flow
     jhs.mmio_vaddr.value = mmio_vaddr
     jhs.mmio_ctrl.value = 1
+
+    await RisingEdge(dut.clk)
     
     # Step 2: Wait for sq_valid_read and capture values
     while True:
@@ -871,10 +875,6 @@ async def run_test_nic(dut):
         
         await tb.port_mac[0].rx.send(test_data)
         tb.log.info("H2D DMA data sent")
-        
-        # Wait for DMA to complete
-        # TODO: this check must be removed
-        await Timer(250, units='ns')
         
         # Step 6: Read DMA_STATUS_REG to verify completion
         tb.log.info("Reading DMA_STATUS_REG to verify completion...")
