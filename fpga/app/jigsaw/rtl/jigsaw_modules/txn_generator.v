@@ -103,11 +103,12 @@ module txn_generator #(
     wire dma_tx_len_valid;
 
     // State machine to track multi-beat transactions
-    localparam IDLE = 2'd0;
-    localparam MMIO_ACTIVE = 2'd1;
-    localparam DMA_ACTIVE = 2'd2;
+    // MMIO is single-beat, so no state needed for it
+    // Only DMA needs state tracking for multi-beat transfers
+    localparam IDLE = 1'd0;
+    localparam DMA_ACTIVE = 1'd1;
 
-    reg [1:0] state, state_next;
+    reg state, state_next;
 
     always @(posedge clk) begin
         if (rst)
@@ -122,18 +123,13 @@ module txn_generator #(
         
         case (state)
             IDLE: begin
-                if (txn_generator_in_tvalid) begin
-                    if (dev_op == 8'd0 || dev_op == 8'd1)
-                        state_next = MMIO_ACTIVE;
-                    else if (dev_op == 8'd2)
+                // Only transition to DMA_ACTIVE for op=2 (DMA reply)
+                // MMIO (op=0, op=1) is single-beat, handled without state change
+                if (txn_generator_in_tvalid && txn_generator_in_tready) begin
+                    if (dev_op == 8'd2 && !txn_generator_in_tlast)
                         state_next = DMA_ACTIVE;
+                    // For MMIO (op=0, op=1), stay in IDLE since it's single-beat
                 end
-            end
-            
-            MMIO_ACTIVE: begin
-                // MMIO is single beat, return to IDLE after accepting
-                if (txn_generator_in_tvalid && txn_generator_in_tready)
-                    state_next = IDLE;
             end
             
             DMA_ACTIVE: begin
@@ -147,8 +143,9 @@ module txn_generator #(
     end
 
     // Route to MMIO or DMA based on current state
-    wire route_to_mmio = (state == IDLE && (dev_op == 8'd0 || dev_op == 8'd1)) || 
-                         (state == MMIO_ACTIVE);
+    // MMIO: only when IDLE AND opcode is 0 or 1
+    // DMA: when IDLE with op=2, or in DMA_ACTIVE state (for subsequent beats)
+    wire route_to_mmio = (state == IDLE && (dev_op == 8'd0 || dev_op == 8'd1));
     wire route_to_dma = (state == IDLE && dev_op == 8'd2) || 
                         (state == DMA_ACTIVE);
 

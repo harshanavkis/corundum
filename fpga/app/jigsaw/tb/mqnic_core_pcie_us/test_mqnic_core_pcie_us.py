@@ -566,7 +566,7 @@ async def jigsaw_mmio_read(tb, dut, pkt_proc, jhs, mmio_vaddr, reg_addr, verify_
     # Step 6: Receive response
     echo_tx_pkt = await tb.port_mac[0].tx.recv()
     assert len(echo_tx_pkt.data) == 8, f"Expected 8 bytes, got {len(echo_tx_pkt.data)}"
-    
+
     # Parse and return the value
     response_value = int.from_bytes(echo_tx_pkt.data[0:8], 'little')
     return response_value
@@ -808,6 +808,13 @@ async def run_test_nic(dut):
         
         assert dma_status == 1, f"Expected DMA_STATUS_REG=1, got 0x{dma_status:x}"
         
+        # Step 7: Read DMA_TX_LEN_REG to verify bytes transferred
+        tb.log.info("Reading DMA_TX_LEN_REG to verify transfer length...")
+        dma_tx_len = await jigsaw_mmio_read(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x38)
+        tb.log.info(f"DMA_TX_LEN_REG: {dma_tx_len} (expected: {dma_len})")
+        
+        assert dma_tx_len == dma_len, f"Expected DMA_TX_LEN_REG={dma_len}, got {dma_tx_len}"
+        
         tb.log.info("D2H DMA test PASSED!")
 
         # ========================================
@@ -866,6 +873,7 @@ async def run_test_nic(dut):
         tb.log.info("H2D DMA data sent")
         
         # Wait for DMA to complete
+        # TODO: this check must be removed
         await Timer(250, units='ns')
         
         # Step 6: Read DMA_STATUS_REG to verify completion
@@ -874,6 +882,13 @@ async def run_test_nic(dut):
         tb.log.info(f"DMA_STATUS_REG: 0x{h2d_dma_status:x} (expected: 0x1)")
         
         assert h2d_dma_status == 1, f"Expected DMA_STATUS_REG=1, got 0x{h2d_dma_status:x}"
+
+        # Step 7: Read DMA_TX_LEN_REG to verify bytes transferred
+        tb.log.info("Reading DMA_TX_LEN_REG to verify transfer length...")
+        h2d_tx_len = await jigsaw_mmio_read(tb, dut, pkt_proc, jhs, test_mmio_vaddr, 0x38)
+        tb.log.info(f"DMA_TX_LEN_REG: {h2d_tx_len} (expected: {h2d_len})")
+        
+        assert h2d_tx_len == h2d_len+64, f"Expected DMA_TX_LEN_REG={h2d_len+64}, got {h2d_tx_len}"
         
         tb.log.info("H2D DMA test PASSED!")
         

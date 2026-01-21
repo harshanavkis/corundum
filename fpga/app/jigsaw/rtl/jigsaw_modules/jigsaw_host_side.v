@@ -93,15 +93,20 @@ localparam DMA_IDLE = 2'b00;
 localparam DMA_RD = 2'b01;
 localparam DMA_WR = 2'b10;
 
+// Register mmio_ctrl to ensure proper synchronization and known reset value
+reg mmio_ctrl_reg;
+
 always @(posedge clk) begin
     if (rst) begin
         mmio_state_cur <= MMIO_IDLE;
         dma_wr_state_cur <= DMA_IDLE;
         dma_rd_state_cur <= DMA_IDLE;
+        mmio_ctrl_reg <= 1'b0;
     end else begin
         mmio_state_cur <= mmio_state_next;
         dma_wr_state_cur <= dma_wr_state_next;
         dma_rd_state_cur <= dma_rd_state_next;
+        mmio_ctrl_reg <= mmio_ctrl;
     end
 end
 
@@ -142,7 +147,7 @@ always @(*) begin
     // MMIO State Machine
     case (mmio_state_cur)
         MMIO_IDLE: begin
-            if (mmio_ctrl && dma_rd_state_cur == DMA_IDLE) begin
+            if (mmio_ctrl_reg && dma_rd_state_cur == DMA_IDLE) begin
                 mmio_state_next = MMIO_ACTIVE;
                 mmio_clear = 1'b1;
                 sq_valid_read = 1'b1;
