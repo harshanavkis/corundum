@@ -167,7 +167,7 @@ always @(*) begin
                     network_out_tkeep = {{(KEEP_WIDTH - 17){1'b0}}, 17'h1FFFF};
                     mmio_state_next = MMIO_IDLE;
                 end else if (host_in_tdata[OP_POS +: OP_WIDTH] == 8'd1) begin
-                    network_out_tdata = {{(AXI_DATA_WIDTH - 200){1'b0}}, host_in_tdata[200:0]};
+                    network_out_tdata = {{(AXI_DATA_WIDTH - 200){1'b0}}, host_in_tdata[199:0]};
                     network_out_tkeep = {{(KEEP_WIDTH - 25){1'b0}}, 25'h1FFFFFF};
                     mmio_state_next = MMIO_IDLE;
                     mmio_write_done = network_out_tready;
