@@ -52,7 +52,7 @@ localparam DMA_TX_LEN_REG = 7;
 reg [63:0] slv_reg [0:NUM_REGS-1];
 
 // Internal signal for pending read data
-reg [63:0] read_data_pending;
+reg [71:0] read_data_pending;
 reg read_data_pending_valid;
 
 // Always ready to accept new transactions (no backpressure)
@@ -70,9 +70,9 @@ always @(posedge clk) begin
         for (int i = 0; i < NUM_REGS; i++) begin
             slv_reg[i] <= 64'b0;
         end
-        read_data <= 64'b0;
+        read_data <= 72'b0;
         read_data_valid <= 1'b0;
-        read_data_pending <= 64'b0;
+        read_data_pending <= 72'b0;
         read_data_pending_valid <= 1'b0;
     end else begin
         // Latch DMA status when valid
