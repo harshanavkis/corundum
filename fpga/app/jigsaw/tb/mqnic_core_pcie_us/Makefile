@@ -86,6 +86,7 @@ VERILOG_SOURCES += ../../lib/axis/rtl/axis_arb_mux.v
 VERILOG_SOURCES += ../../lib/axis/rtl/axis_async_fifo.v
 VERILOG_SOURCES += ../../lib/axis/rtl/axis_async_fifo_adapter.v
 VERILOG_SOURCES += ../../lib/axis/rtl/axis_demux.v
+VERILOG_SOURCES += ../../lib/axis/rtl/axis_mux.v
 VERILOG_SOURCES += ../../lib/axis/rtl/axis_fifo.v
 VERILOG_SOURCES += ../../lib/axis/rtl/axis_fifo_adapter.v
 VERILOG_SOURCES += ../../lib/axis/rtl/axis_pipeline_fifo.v
