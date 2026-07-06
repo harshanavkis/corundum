@@ -37,7 +37,7 @@ async def receiver(dut, n_frames):
     """Collect n_frames output frames (data beats + tag beat with tlast)."""
     frames = []
     cur = []
-    for _ in range(20000):
+    for _ in range(40000):
         await RisingEdge(dut.clk)
         if dut.aes_out_tvalid.value:
             nbytes = bin(int(dut.aes_out_tkeep.value)).count("1")
@@ -70,7 +70,9 @@ async def multi_packet_stream(dut):
     for _ in range(200):
         await RisingEdge(dut.clk)
 
-    payloads = [b"\x11" * 8, b"\x22" * 8, bytes(range(16)), b"\x55" * 40, bytes(range(100))]
+    # includes a 100000-byte packet crossing the old 64 KiB length-counter limit
+    payloads = [b"\x11" * 8, b"\x22" * 8, bytes(range(16)), b"\x55" * 40,
+                bytes(range(256)) * 391 + b"\xAB" * 104]  # 100200 bytes
 
     recv = cocotb.start_soon(receiver(dut, len(payloads)))
     send = cocotb.start_soon(sender(dut, payloads))
@@ -90,3 +92,38 @@ async def multi_packet_stream(dut):
     cycles = (t1 - t0) / 4
     dut._log.info(f"5 packets, {total_beats} data beats, {cycles:.0f} cycles total "
                   f"({cycles / len(payloads):.1f} cycles/pkt incl. one-time latency)")
+
+
+@cocotb.test()
+async def two_64k_packets(dut):
+    """Two back-to-back 64 KiB packets: the second tag verifies only if
+    the engine advanced its IV across the packet boundary, and 65536
+    bytes exercises the length accumulator just past the 16-bit mark."""
+    cocotb.start_soon(Clock(dut.clk, 4, units="ns").start())
+
+    dut.aes_in_tvalid.value = 0
+    dut.aes_in_tlast.value = 0
+    dut.aes_in_tuser.value = 0
+    dut.aes_out_tready.value = 1
+    dut.enc_dec.value = 0
+
+    dut.rst.value = 1
+    for _ in range(10):
+        await RisingEdge(dut.clk)
+    dut.rst.value = 0
+
+    for _ in range(200):
+        await RisingEdge(dut.clk)
+
+    payloads = [bytes(range(256)) * 256, bytes(range(255, -1, -1)) * 256]  # 2 x 65536 B
+
+    recv = cocotb.start_soon(receiver(dut, len(payloads)))
+    cocotb.start_soon(sender(dut, payloads))
+    frames = await recv
+
+    for n, (pt, frame) in enumerate(zip(payloads, frames)):
+        exp_ct, exp_tag = model_encrypt(pt, n)
+        ct, tag = frame[:-16], frame[-16:]
+        dut._log.info(f"64k pkt {n}: iv={n} ct_ok={ct == exp_ct} tag_ok={tag == exp_tag}")
+        assert ct == exp_ct, f"pkt {n}: CT mismatch"
+        assert tag == exp_tag, f"pkt {n}: TAG mismatch (IV not advanced across packets?)"

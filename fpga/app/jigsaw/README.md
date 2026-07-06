@@ -125,9 +125,10 @@ Rules that follow from the hardware:
    quarantined in their engine's FIFO and stall the in-order collector;
    recovery requires a reset.
 3. **Sizes:** ≥ 1 byte of ciphertext after the tag (tag-only frames are
-   not processed), ≤ NIC MTU (9214 B; the engine itself handles up to
-   64 KB per packet — within a packet every 128-bit block simply
-   continues the CTR counter, so large packets need nothing special).
+   not processed), ≤ NIC MTU (9214 B). The crypto path itself handles up
+   to **1 MiB of ciphertext per packet** (see §5) — within a packet
+   every 128-bit block simply continues the CTR counter, so large
+   packets need nothing special from software.
 4. **On NIC reset,** reset both IV counters to zero.
 
 The payload *content* is opaque to the crypto path. In jigsaw the
@@ -168,4 +169,125 @@ def parse_response(frame: bytes) -> bytes:
 - Fixed all-zero key (elaboration-time parameter, no runtime load path).
 - Positional IVs require a lossless, in-order link.
 - A failed request tag stalls the decrypt path until reset.
-- Per-packet ciphertext limited to 64 KB (16-bit length accumulator).
+- **Per-packet ciphertext is limited to 1 MiB.** The engine's length
+  accumulator is sized for 1 MiB (GCM itself would allow ~64 GiB), but
+  the binding constraint is architectural: the decrypt path releases a
+  frame only after its tag verifies, and the tag is only known at the
+  end of the frame, so the *entire* decrypted frame is buffered in its
+  engine's output FIFO before the first byte leaves. Those FIFOs are
+  sized 2 MiB each to cover the limit — substantial block RAM per
+  engine on a real FPGA, and the cost scales linearly with the maximum
+  frame size. A frame exceeding the limit wraps the length counter
+  (guaranteed authentication failure) and can deadlock its decrypt
+  engine on the full FIFO — do not send one. Raising the limit further
+  means either more FIFO memory or moving to cut-through release with a
+  late-abort contract downstream.
+
+## 6. Expected throughput
+
+Each engine processes one 128-bit block per cycle, continuously across
+packet boundaries (the AES pipe is never drained; its 56-cycle transit
+is latency, not throughput). The per-packet overhead is one J0 slot on
+the input side plus one GHASH length cycle and one tag beat on the
+output side, so for a packet of `m` 128-bit beats:
+
+```
+engine goodput   ≈ f_clk × 128 bit × m / (m + 3)        (worst case)
+aggregate        ≈ N_engines × engine goodput, capped by the bus
+bus capacity     = f_clk × 512 bit                (128 Gb/s @ 250 MHz)
+```
+
+Measured in the unit TB (cycle-accurate, frequency-independent):
+5 back-to-back packets totalling 6269 data beats completed in 6336
+cycles — **98.9 % duty**, i.e. per-packet overhead ≈ 2 slots in
+practice, slightly better than the m+3 model.
+
+Projected at 250 MHz with the default 4 engines (m+3 model):
+
+| Payload | m (beats) | duty | aggregate | vs 100G line rate |
+|---|---|---|---|---|
+| 33 B (jigsaw MMIO) | 3 | 50 % | 64 Gb/s | 148 Mpps capacity vs 148.8 needed: marginal |
+| 64 B | 4 | 57 % | 73 Gb/s | marginal at worst case, OK at measured overhead |
+| 256 B | 16 | 84 % | 108 Gb/s | line rate |
+| 512 B | 32 | 91 % | 117 Gb/s | line rate |
+| 1500 B | 94 | 97 % | 124 Gb/s | line rate |
+| 9 KB jumbo | 576 | 99.5 % | 127 Gb/s | line rate (bus-capped) |
+
+Notes:
+
+- **Min-size packets are the marginal case:** 4 engines deliver
+  ~143–167 Mpps (worst-case vs measured overhead) against the 148.8 Mpps
+  that 64-byte line rate demands. For guaranteed headroom set
+  `NUM_AES_ENGINES = 8` (one parameter in `jigsaw_pkt_processor`).
+- **Single flow:** one packet passes through one engine, so a single
+  large packet/flow is bounded by one 128-bit lane, 32 Gb/s @ 250 MHz.
+  Exceeding that needs a wider (multi-lane) core, not more engines.
+- **Latency:** ~56 cycles AES transit (224 ns @ 250 MHz) plus adapters
+  and FIFOs on the encrypt path; the decrypt path additionally buffers
+  each full frame until its tag verifies (store-and-forward), adding one
+  frame time.
+- **All bit-rates assume the pipe-7 core closes 250 MHz.** This is the
+  reason the core is generated with 4 register stages per round, but it
+  has not yet been confirmed by synthesis; throughput scales linearly
+  with the actual Fmax. The duty-cycle figures are cycle-accurate and
+  hold at any frequency.
+
+## 7. Running the AES-GCM tests standalone
+
+All simulations use Icarus Verilog + cocotb. The expected environment is
+the project nix shell, which provides iverilog, cocotb, and the
+`cryptography`/`pycryptodome` packages used by the reference models:
+
+```sh
+nix-shell <jigsaw-ns>/corundum-stuff/default.nix
+```
+
+### Engine unit tests (fast, run these while developing)
+
+These exercise the encrypt/decrypt wrappers plus the full `aes_gcm_stream`
+engine directly — no NIC, no PCIe — and check every ciphertext, plaintext
+and tag against the Python `cryptography` GCM model:
+
+```sh
+cd fpga/app/jigsaw/tb/aes_gcm_stream
+
+# encryption: back-to-back packets with incrementing IVs, partial final
+# blocks, a >64 KiB packet, a throughput report (cycles/packet), and two
+# back-to-back 64 KiB packets verifying IV continuity across packets
+make
+
+# decryption: tag stripping/queueing, multiple packets in flight,
+# ghash_tag_val per packet, corrupted-tag rejection
+make TOPLEVEL=aes_gcm_decryption MODULE=test_aes_dec_unit
+```
+
+Results are printed as a cocotb summary table; `make` exits non-zero on
+failure. Remove `sim_build/` when switching between the two targets so
+the right toplevel is elaborated. Compilation of the generated AES
+netlist (`top_aes_gcm.v`, ~35 MB) dominates the run time; the large-packet
+encryption test additionally simulates ~100 KiB of traffic and takes
+several minutes under Icarus.
+
+### Full end-to-end test
+
+The complete NIC simulation (PCIe host model, driver bring-up, MAC
+loopback) sends encrypted MMIO write/read transactions through all four
+decrypt and encrypt engines, including rotation wrap-around and the
+positional IV schedule of §3:
+
+```sh
+cd fpga/app/jigsaw/tb/mqnic_core_pcie_us
+make
+```
+
+This is the slowest test (roughly ten minutes); use it as the final
+regression, not the development loop. The verdict is in the cocotb table
+and in `results.xml` (a `<failure>` element means a failed run).
+
+### Upstream core tests
+
+The generated AES core itself (`top_aes_gcm.v`) has its own randomized
+testbench with NIST-vector support in the vendored source repository
+(`AES-GCM-128-192-256-bits/verilog-tb`, outside this tree); regenerate
+and re-verify there when changing the core's VHDL, then copy the fresh
+netlist into `rtl/jigsaw_modules/`.

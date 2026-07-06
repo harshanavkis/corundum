@@ -228,7 +228,11 @@ module aes_gcm_stream #(
     reg [1:0] out_state;
     reg [127:0] h_q;
     reg [127:0] y_q;
-    reg [15:0] ct_len_bytes;
+    // Supports up to 1 MiB of ciphertext per packet (GCM itself allows
+    // ~64 GiB; the practical bound is the decrypt-side store-and-forward
+    // FIFO, see jigsaw_pkt_processor). A packet exceeding this wraps the
+    // counter and fails authentication.
+    reg [20:0] ct_len_bytes;
 
     // small J0 store (per-packet tag masks, in packet order)
     reg [127:0] j0_mem [0:15];
@@ -282,7 +286,7 @@ module aes_gcm_stream #(
 
     // GHASH: hash the ciphertext (post-XOR on encrypt, input data on
     // decrypt), then the length block; one shared multiplier
-    wire [127:0] len_block = {64'h0, 45'h0, ct_len_bytes, 3'h0};
+    wire [127:0] len_block = {64'h0, 40'h0, ct_len_bytes, 3'h0};
     wire [127:0] ghash_x =
         (out_state == OUT_LEN) ? len_block :
         (enc_dec ? (head_pdata & bval_mask) : xor_masked);
@@ -300,7 +304,7 @@ module aes_gcm_stream #(
             out_state <= OUT_DATA;
             h_q <= 128'h0;
             y_q <= 128'h0;
-            ct_len_bytes <= 16'd0;
+            ct_len_bytes <= 21'd0;
             type_rd <= 0;
             data_rd <= 0;
             j0_wr <= 5'd0;
@@ -336,7 +340,7 @@ module aes_gcm_stream #(
             if (tag_fire) begin
                 out_state <= OUT_DATA;
                 y_q <= 128'h0;
-                ct_len_bytes <= 16'd0;
+                ct_len_bytes <= 21'd0;
                 j0_rd <= j0_rd + 1;
             end
         end

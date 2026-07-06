@@ -222,8 +222,14 @@ module jigsaw_pkt_processor #(
                 end
             end
 
+            // Frames are released only after tag verification (credits
+            // below), so a whole frame is buffered here before the first
+            // byte leaves: this FIFO bounds the maximum decryptable frame.
+            // Sized 2 MiB (DEPTH is in bytes) to hold the engine's 1 MiB
+            // per-packet ciphertext limit with margin; on a real FPGA this
+            // is substantial block RAM per engine.
             axis_fifo_adapter #(
-                .DEPTH(1024),
+                .DEPTH(2097152),
                 .S_DATA_WIDTH(128),
                 .S_KEEP_ENABLE(1),
                 .S_KEEP_WIDTH(16),
