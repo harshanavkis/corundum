@@ -28,6 +28,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
 from bitarray import bitarray
+import itertools
 import random
 
 try:
@@ -516,6 +517,19 @@ async def run_test_nic(dut):
     key = bytes(32)
     iv = bytes(12)
 
+    # Per-packet IVs: RX packets count 0,1,2,... in send order; TX (echo)
+    # responses use a disjoint IV space (MSB direction bit set). This must
+    # match the per-engine IV_INIT/IV_STRIDE lanes in jigsaw_pkt_processor.
+    rx_iv_cnt = itertools.count()
+    tx_iv_cnt = itertools.count()
+
+    def rx_gcm_iv():
+        return next(rx_iv_cnt).to_bytes(12, 'big')
+
+    def tx_gcm_iv():
+        return ((1 << 95) | next(tx_iv_cnt)).to_bytes(12, 'big')
+
+
     tb.log.info("Jigsaw MMIO W/R: 0x0")
 
     send_payload, written_mmio_data = jigsaw_mmio_packet_gen(1, 0, 8)
@@ -527,7 +541,7 @@ async def run_test_nic(dut):
     # Initialize AES-GCM cipher
     payload_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(rx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
@@ -553,13 +567,13 @@ async def run_test_nic(dut):
     # Initialize AES-GCM cipher
     payload_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(rx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
     recv_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(tx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
@@ -591,7 +605,7 @@ async def run_test_nic(dut):
     # Initialize AES-GCM cipher
     payload_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(rx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
@@ -617,13 +631,13 @@ async def run_test_nic(dut):
     # Initialize AES-GCM cipher
     payload_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(rx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
     recv_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(tx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
@@ -655,7 +669,7 @@ async def run_test_nic(dut):
     # Initialize AES-GCM cipher
     payload_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(rx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
@@ -681,13 +695,13 @@ async def run_test_nic(dut):
     # Initialize AES-GCM cipher
     payload_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(rx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
     recv_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(tx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
@@ -719,7 +733,7 @@ async def run_test_nic(dut):
     # Initialize AES-GCM cipher
     payload_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(rx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
@@ -745,13 +759,13 @@ async def run_test_nic(dut):
     # Initialize AES-GCM cipher
     payload_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(rx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
     recv_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(tx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
@@ -783,7 +797,7 @@ async def run_test_nic(dut):
     # Initialize AES-GCM cipher
     payload_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(rx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
@@ -809,13 +823,13 @@ async def run_test_nic(dut):
     # Initialize AES-GCM cipher
     payload_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(rx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 
     recv_encryptor = Cipher(
         algorithms.AES(key),
-        modes.GCM(iv),
+        modes.GCM(tx_gcm_iv()),
         backend=default_backend()
     ).encryptor()
 

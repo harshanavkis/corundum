@@ -176,7 +176,13 @@ module jigsaw_pkt_processor #(
             wire eng_out_tuser;
             wire eng_tag_ok;
 
-            aes_gcm_decryption decr_module (
+            // Engine n handles global RX frames n, n+N, n+2N, ...; with
+            // IV = global frame index the striped engines jointly cover
+            // the sender's per-packet IV sequence 0,1,2,...
+            aes_gcm_decryption #(
+                .IV_INIT(96'h0 + n),
+                .IV_STRIDE(NUM_AES_ENGINES)
+            ) decr_module (
                 .clk(clk),
                 .rst(rst),
                 .enc_dec(1'b1),
@@ -464,7 +470,12 @@ module jigsaw_pkt_processor #(
             wire eng_out_tlast;
             wire eng_out_tuser;
 
-            aes_gcm_encryption encr_module (
+            // TX IV space is disjoint from RX (MSB direction bit): GCM
+            // forbids (key, IV) reuse, and both directions share the key
+            aes_gcm_encryption #(
+                .IV_INIT(96'h800000000000000000000000 + n),
+                .IV_STRIDE(NUM_AES_ENGINES)
+            ) encr_module (
                 .clk(clk),
                 .rst(rst),
                 .enc_dec(1'b0),
