@@ -107,16 +107,52 @@ module aes_gcm_encryption
         .tkeep_out(aes_in_tkeep_be)
     );
 
-    assign aes_gcm_data_in_bval = aes_in_tvalid ? aes_in_tkeep_be : 16'h0;
-    assign aes_gcm_data_in = aes_in_tvalid ? aes_in_tdata_be : 128'h0;
-    assign aes_gcm_icb_stop_cnt = aes_in_tvalid ? aes_in_tlast : 1'b0;
+    // A beat is consumed by the core only when valid and ready are both high:
+    // qualify everything presented to the core with tready so a stalled beat
+    // is not consumed twice or paired with the wrong keystream block
+    wire aes_in_beat = aes_in_tvalid && aes_in_tready;
 
-    assign aes_in_tready = (!init_busy_o) && aes_gcm_ready;
+    assign aes_gcm_data_in_bval = aes_in_beat ? aes_in_tkeep_be : 16'h0;
+    assign aes_gcm_data_in = aes_in_beat ? aes_in_tdata_be : 128'h0;
+    assign aes_gcm_icb_stop_cnt = aes_in_beat ? aes_in_tlast : 1'b0;
 
-    assign aes_gcm_ghash_pkt_val = aes_in_tvalid;
+    // Hold off the next packet from the end of this packet's input until the
+    // per-packet re-init (pipe flush + IV reload + counter restart) has
+    // completed, so no data can pair with stale keystream left in the pipe
+    reg pkt_gap;
+    reg init_done_q;
+    always @(posedge clk) begin
+        if (rst) begin
+            pkt_gap <= 1'b0;
+            init_done_q <= 1'b0;
+        end else begin
+            init_done_q <= init_done_o;
+            if (aes_in_beat && aes_in_tlast) begin
+                pkt_gap <= 1'b1;
+            end else if (init_done_o && !init_done_q) begin
+                pkt_gap <= 1'b0;
+            end
+        end
+    end
+
+    assign aes_in_tready = (!init_busy_o) && (!pkt_gap) && aes_gcm_ready;
+
+    // Frame envelope for GHASH: high from the first to the last accepted
+    // beat, held through mid-packet stalls, and falling right after tlast
+    // even if the upstream tvalid of a following packet is already asserted
+    reg in_pkt;
+    always @(posedge clk) begin
+        if (rst) begin
+            in_pkt <= 1'b0;
+        end else if (aes_in_beat) begin
+            in_pkt <= !aes_in_tlast;
+        end
+    end
+
+    assign aes_gcm_ghash_pkt_val = in_pkt || aes_in_beat;
 
     top_aes_gcm aes_gcm_core (
-        .rst_i(aes_gcm_pipe_reset),
+        .rst_i(rst),
         .clk_i(clk),
         .aes_gcm_mode_i(2'b10),
         .aes_gcm_enc_dec_i(enc_dec),
@@ -164,5 +200,5 @@ module aes_gcm_encryption
    assign aes_out_tdata = aes_gcm_ghash_tag_val ? aes_gcm_ghash_tag_le : aes_out_tdata_le;
    assign aes_out_tkeep = aes_gcm_ghash_tag_val ? aes_gcm_ghash_tkeep_le : aes_out_tkeep_le;
    assign aes_out_tvalid = aes_gcm_ghash_tag_val ? aes_gcm_ghash_tag_val : aes_gcm_data_out_val;
-   assign aes_out_tlast = aes_in_tvalid ? 1'b0 : (aes_gcm_ghash_tag_val ? 1'b1 : 1'b0);
+   assign aes_out_tlast = aes_gcm_ghash_tag_val;
 endmodule
